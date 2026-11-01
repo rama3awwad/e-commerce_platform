@@ -67,7 +67,7 @@ export class AuthController {
     examples: {
       'Admin (email)': {
         summary: 'Login as seeded admin using email',
-        value: { identifier: 'admin@restaurant.com', password: 'Admin@123' },
+        value: { identifier: 'admin@store.com', password: 'Admin@123' },
       },
       'Admin (username)': {
         summary: 'Login as seeded admin using username',

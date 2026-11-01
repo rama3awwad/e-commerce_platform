@@ -72,7 +72,7 @@ http://localhost:3000/api/docs
   "success": true,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "user": { "id": "...", "email": "admin@restaurant.com", "role": "ADMIN" }
+    "user": { "id": "...", "email": "admin@store.com", "role": "ADMIN" }
   },
   "timestamp": "..."
 }
@@ -95,7 +95,7 @@ http://localhost:3000/api/docs
 
 | الدور | Email | Username |
 |---|---|---|
-| ADMIN | `admin@restaurant.com` | `admin` |
+| ADMIN | `admin@store.com` | `admin` |
 | CUSTOMER | `customer@test.com` | `testcustomer` |
 
 > الـ login يقبل الإيميل **أو** اسم المستخدم في حقل `identifier`.
@@ -106,7 +106,7 @@ http://localhost:3000/api/docs
 
 نفّذ هذه الخطوات في السويغر بالترتيب من 1 إلى 10. هذه نفس الجلسة التي ستشرحها لفريق الفرونت.
 
-### الخطوة 1 — GET /health (فحص السيرفر)
+### الخطوة 1 — GET /api/v1/health (فحص السيرفر)
 - Try it out → Execute.
 - ✅ المتوقع: `200` و `data.status: "ok"`.
 - معناها: السيرفر شغّال والاتصال سليم.
@@ -115,7 +115,7 @@ http://localhost:3000/api/docs
 - Body جاهز داخل السويغر — اختر مثال **"Admin (email)"**:
 
 ```json
-{ "identifier": "admin@restaurant.com", "password": "Admin@123" }
+{ "identifier": "admin@store.com", "password": "Admin@123" }
 ```
 
 - ✅ المتوقع: `200` + `data.accessToken` + `data.user.role: "ADMIN"`.
@@ -155,7 +155,7 @@ http://localhost:3000/api/docs
 
 ```json
 {
-  "email": "manager@restaurant.com",
+  "email": "manager@store.com",
   "username": "manager",
   "password": "Manager@123",
   "firstName": "Store",
@@ -197,7 +197,7 @@ http://localhost:3000/api/docs
 
 | # | Method | المسار | توكن؟ | من يقدر يستدعيها؟ | الوظيفة |
 |---|---|---|---|---|---|
-| 1 | GET | `/health` | ❌ لا | الجميع | فحص أن السيرفر حي |
+| 1 | GET | `/api/v1/health` | ❌ لا | الجميع | فحص أن السيرفر حي |
 | 2 | POST | `/api/v1/auth/register` | ❌ لا | الجميع | إنشاء حساب عميل جديد (دائماً CUSTOMER) |
 | 3 | POST | `/api/v1/auth/login` | ❌ لا | الجميع | تسجيل الدخول (إيميل أو اسم مستخدم) → توكن |
 | 4 | GET | `/api/v1/auth/me` | ✅ JWT | أي مستخدم مسجل | بياناتي الحالية (فحص الجلسة) |

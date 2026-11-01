@@ -66,11 +66,13 @@ export class UsersController {
   @ApiOperation({
     summary: 'Get all users — paginated + searchable (Admin only)',
     description:
-      'All query params are optional: `page` (default 1), `limit` (default 10, max items per page), `search` (case-insensitive match in email, username, firstName, lastName). '
+      'All query params are OPTIONAL — clear them all and the server applies defaults (page=1, limit=10). '
+      + '`page` = which page, `limit` = items per page (default 10, MAX 100 — 400 error above that), '
+      + '`search` = case-insensitive match in email, username, firstName, lastName. '
       + 'Example: `/users?page=1&limit=10&search=ahmad`. The response `meta` object tells the frontend how many pages exist (totalPages, hasNext, hasPrev).',
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Items per page (default 10)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Items per page (default 10, max 100)' })
   @ApiQuery({ name: 'search', required: false, type: String, example: 'ahmad', description: 'Search in email, username, firstName, lastName' })
   @ApiPaginatedResponse(UserResponseDto, 'Paginated list of users')
   @ApiErrorResponse(403, 'Authenticated user is not ADMIN', 'Forbidden resource', 'Forbidden')

@@ -49,16 +49,14 @@ async function bootstrap() {
   });
 
   // ===== API Prefix =====
-  app.setGlobalPrefix('api', {
-    exclude: ['/health'],
-  });
+  app.setGlobalPrefix('api');
 
   // ===== Swagger Documentation =====
   const config = new DocumentBuilder()
-    .setTitle('Restaurant Ordering Platform API')
+    .setTitle('E-Commerce Platform API')
     .setDescription(
       [
-        'A comprehensive REST API for a restaurant ordering platform (Internet Tech Club 2026 — Basic Track).',
+        'A comprehensive REST API for an e-commerce platform — a clothing store example (Internet Tech Club 2026 — Basic Track).',
         '',
         '## 📦 Unified Response Format',
         '**All successful responses** are wrapped in the same envelope:',
@@ -85,7 +83,7 @@ async function bootstrap() {
         '5. Click 🔒 **Authorize** → paste the token → now protected endpoints work',
         '',
         '**Seeded test accounts** (password for both: `Admin@123`):',
-        '- Admin: `admin@restaurant.com` / username: `admin`',
+        '- Admin: `admin@store.com` / username: `admin`',
         '- Customer: `customer@test.com` / username: `testcustomer`',
         '',
         '**Response code meanings**: 200 OK · 201 Created · 400 validation error (message = array) · 401 no/bad token · 403 role not allowed · 404 not found · 409 duplicate email/username · 429 too many requests.',
@@ -101,7 +99,7 @@ async function bootstrap() {
         '- **Account lockout**: 5 failed logins → account locked for 15 minutes (403)',
         '',
         '## 🚧 Current Phase',
-        '**Phase 1**: Authentication + Users management. Upcoming phases: Products, Orders, Cart, Reviews.',
+        '**Phase 1**: Authentication + Users management. Upcoming phases: Products (with stock quantities, sizes & colors), Cart, Orders, Reviews.',
       ].join('\n'),
     )
     .setVersion('1.0')
@@ -124,7 +122,7 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'Restaurant API — Swagger Docs',
+    customSiteTitle: 'E-Commerce API — Swagger Docs',
     swaggerOptions: {
       persistAuthorization: true, // keep the token after page reload
       tagsSorter: 'alpha',
@@ -134,6 +132,19 @@ async function bootstrap() {
       tryItOutEnabled: true, // "Try it out" is open by default
       defaultModelsExpandDepth: -1, // hide the models section at the bottom
     },
+  });
+
+  // ===== Convenience routes (registered before Nest's router) =====
+  // Visiting / or /api in a browser redirects to Swagger docs instead of a scary 404
+  app.use((req: any, res: any, next: () => void) => {
+    if (req.originalUrl === '/' || req.originalUrl === '/api' || req.originalUrl === '/api/') {
+      return res.redirect('/api/docs');
+    }
+    // Browsers request /favicon.ico automatically — silence the 404 noise
+    if (req.originalUrl === '/favicon.ico') {
+      return res.status(204).end();
+    }
+    next();
   });
 
   // ===== Start Server =====

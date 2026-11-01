@@ -1,9 +1,9 @@
-import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 
 @ApiTags('health')
-// VERSION_NEUTRAL = the path is exactly /health (no /v1) — health checks must stay stable for Docker & monitoring
-@Controller({ path: 'health', version: VERSION_NEUTRAL })
+// version '1' → the full path is /api/v1/health — every public URL includes the API version
+@Controller({ path: 'health', version: '1' })
 export class HealthController {
   @Get()
   @ApiOperation({ summary: 'Health check endpoint' })

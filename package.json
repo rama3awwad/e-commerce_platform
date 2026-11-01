@@ -1,7 +1,7 @@
 {
-  "name": "restaurant-backend",
+  "name": "ecommerce-backend",
   "version": "0.1.0",
-  "description": "Restaurant ordering platform - Backend API",
+  "description": "E-Commerce platform (clothing store) - Backend API",
   "author": "Internet Tech Club 2026",
   "private": true,
   "license": "MIT",
@@ -14,6 +14,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

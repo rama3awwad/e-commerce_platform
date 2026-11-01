@@ -4,18 +4,18 @@ services:
   # ========== PostgreSQL Database ==========
   db:
     image: postgres:16-alpine
-    container_name: restaurant_db
+    container_name: ecommerce_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: restaurant_db
+      POSTGRES_DB: ecommerce_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d restaurant_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,10 +25,10 @@ services:
   # ========== pgAdmin (Database Management) ==========
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: restaurant_pgadmin
+    container_name: ecommerce_pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@restaurant.com
+      PGADMIN_DEFAULT_EMAIL: admin@store.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - "5050:80"
@@ -43,10 +43,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: restaurant_backend
+    container_name: ecommerce_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@db:5432/restaurant_db?schema=public"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/ecommerce_db?schema=public"
       JWT_SECRET: "change-this-to-a-secure-secret-in-production"
       JWT_EXPIRATION: "1d"
       PORT: 3000

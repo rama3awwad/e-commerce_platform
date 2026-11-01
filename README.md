@@ -1,6 +1,8 @@
-# Restaurant Ordering Platform - Backend API
+# E-Commerce Platform - Backend API
 
-A comprehensive NestJS backend API for a restaurant ordering platform, built with TypeScript, Prisma ORM, PostgreSQL, and Docker.
+A comprehensive NestJS backend API for an e-commerce platform (clothing store as the example domain), built with TypeScript, Prisma ORM, PostgreSQL, and Docker.
+
+**Domain roadmap:** Products (with stock quantities, sizes & colors) → Cart → Orders → Reviews. Current phase: **Phase 1 — Authentication & Users**.
 
 ## 🏗️ Architecture
 
@@ -61,10 +63,10 @@ Swagger UI is available at: `http://localhost:3000/api/docs`
 
 ## 🔐 Default Users (after seeding)
 
-| Role         | Email                        | Password   |
-|-------------|------------------------------|------------|
-| Admin       | admin@restaurant.com         | Admin@123  |
-| Customer    | customer@test.com            | Admin@123  |
+| Role         | Email                        | Username       | Password   |
+|-------------|------------------------------|----------------|------------|
+| Admin       | admin@store.com              | admin          | Admin@123  |
+| Customer    | customer@test.com            | testcustomer   | Admin@123  |
 
 ## 🛡️ Security Features
 
