@@ -1,4 +1,6 @@
 import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import 'dotenv/config';
 import {
   ApiTags,
   ApiOperation,
@@ -23,6 +25,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { limit: Number(process.env.LOGIN_THROTTLE_LIMIT || 5), ttl: Number(process.env.LOGIN_THROTTLE_TTL || 60000) } })
   @ApiOperation({
     summary: 'Register a new customer account',
     description:
@@ -54,6 +57,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: Number(process.env.LOGIN_THROTTLE_LIMIT || 5), ttl: Number(process.env.LOGIN_THROTTLE_TTL || 60000) } })
   @ApiOperation({
     summary: 'Login with email OR username + password',
     description:

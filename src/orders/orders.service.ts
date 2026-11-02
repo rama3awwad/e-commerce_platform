@@ -26,7 +26,7 @@ export class OrdersService {
       const order = await this.prisma.$transaction(async (tx) => {
         const totalAmount = dto.items.reduce((sum, item) => { const p = products.find((x) => x.id === item.productId)!; return sum.plus(p.price.mul(item.quantity)); }, new Prisma.Decimal(0));
         const created = await tx.order.create({ data: { userId, totalAmount, items: { create: dto.items.map((item) => { const p = products.find((x) => x.id === item.productId)!; return { productId: p.id, quantity: item.quantity, unitPrice: p.price }; }) } }, include: { items: true } });
-        await this.notifications.create(userId, 'ORDER_CREATED', 'Order created', `Order ${created.id} was created.`, tx);
+        await this.notifications.create(userId, 'ORDER_CREATED', 'Order created', `Order #${created.orderNumber} was created.`, tx);
         return created;
       });
       return order;
@@ -62,7 +62,7 @@ export class OrdersService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const row = await tx.order.update({ where: { id }, data: { status }, include: { items: true } });
-        await this.notifications.create(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order ${id} is now ${status}.`, tx);
+        await this.notifications.create(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order #${order.orderNumber} is now ${status}.`, tx);
         return row;
       });
     } catch (error) {

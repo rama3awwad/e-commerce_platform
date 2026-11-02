@@ -4,6 +4,7 @@ import {
   getSchemaPath,
   ApiOkResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
 } from '@nestjs/swagger';
 
 /**
@@ -40,6 +41,7 @@ export const ApiSuccessResponse = (
   description = 'Successful response',
 ) =>
   applyDecorators(
+    ApiExtraModels(model),
     status === 201
       ? ApiCreatedResponse({
           description,
@@ -60,6 +62,7 @@ export const ApiPaginatedResponse = (
   description = 'Paginated response',
 ) =>
   applyDecorators(
+    ApiExtraModels(model),
     ApiOkResponse({
       description,
       schema: envelopeSchema({
@@ -78,6 +81,7 @@ export const ApiPaginatedResponse = (
               totalPages: { type: 'number', example: 5 },
               hasNext: { type: 'boolean', example: true },
               hasPrev: { type: 'boolean', example: false },
+              unreadCount: { type: 'number', example: 3, description: 'Present on notifications lists' },
             },
           },
         },
@@ -86,9 +90,15 @@ export const ApiPaginatedResponse = (
     }),
   );
 
+export const ApiArraySuccessResponse = (model: Type, description = 'Successful response') =>
+  applyDecorators(
+    ApiExtraModels(model),
+    ApiOkResponse({ description, schema: envelopeSchema({ type: 'array', items: { $ref: getSchemaPath(model) } }) }),
+  );
+
 /**
  * Documents an error response following the global exception filter format:
- * { statusCode, message, error, timestamp, path }
+ * { statusCode, code, message, error, details?, timestamp, path }
  */
 export const ApiErrorResponse = (
   status:
@@ -98,6 +108,7 @@ export const ApiErrorResponse = (
     | 404
     | 409
     | 429
+    | 503
     | 500,
   description: string,
   messageExample: string | string[],
@@ -110,10 +121,12 @@ export const ApiErrorResponse = (
       type: 'object',
       properties: {
         statusCode: { type: 'number', example: status },
+        code: { type: 'string', example: status === 400 ? 'VALIDATION_ERROR' : status === 401 ? 'UNAUTHORIZED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : status === 409 ? 'CONFLICT' : status === 429 ? 'TOO_MANY_REQUESTS' : status === 503 ? 'INVENTORY_UNAVAILABLE' : 'INTERNAL_ERROR' },
         message: Array.isArray(messageExample)
           ? { type: 'array', items: { type: 'string' }, example: messageExample }
           : { type: 'string', example: messageExample },
         error: { type: 'string', example: errorName },
+        details: { type: 'array', items: { type: 'object' }, nullable: true },
         timestamp: {
           type: 'string',
           format: 'date-time',
@@ -121,6 +134,6 @@ export const ApiErrorResponse = (
         },
         path: { type: 'string', example: '/api/v1/endpoint' },
       },
-      required: ['statusCode', 'message', 'error', 'timestamp', 'path'],
+      required: ['statusCode', 'code', 'message', 'error', 'timestamp', 'path'],
     },
   });

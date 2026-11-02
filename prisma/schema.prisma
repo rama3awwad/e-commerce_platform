@@ -72,6 +72,7 @@ model Product {
 
 model Order {
   id          String      @id @default(uuid())
+  orderNumber Int         @unique @default(autoincrement())
   userId      String
   status      OrderStatus @default(PENDING)
   totalAmount Decimal     @db.Decimal(10, 2)

@@ -1,45 +1,21 @@
-# ========== Build Stage ==========
 FROM node:20-alpine AS builder
-
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
-
-# Copy source code
 COPY . .
+RUN npx prisma generate && npm run build
 
-# Generate Prisma client
-RUN npx prisma generate
-
-# Build the application
-RUN npm run build
-
-# ========== Production Stage ==========
 FROM node:20-alpine AS production
-
+ENV NODE_ENV=production
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
-
-# Install production dependencies only
 RUN npm ci --omit=dev
-
-# Copy built application from builder
 COPY --from=builder /app/dist ./dist
-
-# Copy Prisma schema and migrations
 COPY --from=builder /app/prisma ./prisma
-
-# Generate Prisma client in production
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 RUN npx prisma generate
-
-# Expose application port
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && mkdir -p /app/uploads && chown -R node:node /app
+USER node
 EXPOSE 3000
-
-# Start the application
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
