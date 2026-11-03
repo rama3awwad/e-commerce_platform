@@ -30,6 +30,12 @@ export function configureApp(app: INestApplication) {
       'Seed accounts use password `Admin@123`: admin@store.com, customer@test.com, customer2@test.com.',
       'Error codes: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, TOO_MANY_REQUESTS, INSUFFICIENT_STOCK, INVALID_STATUS_TRANSITION, INVENTORY_UNAVAILABLE, INTERNAL_ERROR.',
       'Images are served from `/uploads/*`. Inventory currently uses an in-memory stub; Requirement 2 may replace the provider behind InventoryPort.',
+      'Order status transitions use a conditional database update. Cancellation commits first and releases inventory once; concurrent or repeated invalid transitions return 409 INVALID_STATUS_TRANSITION.',
+      'Inventory reservations use the order UUID as an idempotency reference. A repeated reserve or release does not change stock twice.',
+      'Product create, update, and stock responses include category and stock. Image uploads are validated by file signature and invalid image bytes are removed.',
+      'Seed runs only on an empty database unless FORCE_SEED=true; all seed operations are insert-only. RUN_SEED controls startup invocation.',
+      'Committed Prisma migrations are immutable. Create migrations with `npx prisma migrate dev --name <change>` and check drift with `SHADOW_DATABASE_URL` and `scripts/check-migrations.sh`.',
+      'Known limitations: inventory stock resets to STUB_DEFAULT_STOCK when the backend restarts; seed images use external URLs while uploaded images use relative `/uploads/...` paths.',
     ].join('\n'))
     .setVersion('1.0')
     .addServer('http://localhost:3000', 'Local development server')

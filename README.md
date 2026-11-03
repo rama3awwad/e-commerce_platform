@@ -13,12 +13,16 @@ docker compose up --build
 
 The API listens on `http://localhost:3000`; health check is `http://localhost:3000/api/v1/health`; Swagger is `http://localhost:3000/api/docs`. The database is private to the Compose network. Product files are stored in the named `uploads` volume and served at `/uploads/<random-name>`. To enable local database port access and pgAdmin for development only, run `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build` (pgAdmin: port 5050; set `PGADMIN_PASSWORD` in `.env`).
 
-The backend entrypoint applies committed Prisma migrations, runs the idempotent seed when `RUN_SEED=true`, and then starts Node. Persistent database and upload volumes survive backend restarts. For a clean local reset (this deletes local Compose data):
+The backend entrypoint applies committed Prisma migrations, optionally runs the seed when `RUN_SEED=true`, and then starts Node. The seed inserts demo data only into an empty database unless `FORCE_SEED=true` is set; forced runs remain insert-only. Persistent database and upload volumes survive backend restarts. To reset local Compose data and allow a fresh seed:
 
 ```sh
 docker compose down -v
 docker compose up --build
 ```
+
+## Database migrations
+
+`prisma/migrations/` contains the initial schema migration. Never edit a committed migration; create a new one with `npx prisma migrate dev --name <change>`. To check for schema drift, set `SHADOW_DATABASE_URL` to an empty PostgreSQL database and run `sh scripts/check-migrations.sh`.
 
 ## Seed accounts
 
@@ -30,7 +34,9 @@ All seeded accounts use `Admin@123`:
 | CUSTOMER | `customer@test.com` | `testcustomer` |
 | CUSTOMER | `customer2@test.com` | `testcustomer2` |
 
-The seed also creates eight categories and 25 realistic catalog products, with public Unsplash photo URLs. Re-running it updates the original demo products and remains idempotent. Change the sample credentials and `JWT_SECRET` before any non-local deployment.
+The seed also creates eight categories and 25 realistic catalog products, with public Unsplash photo URLs. It never overwrites existing users, categories, or products, including inactive products. Change the sample credentials and `JWT_SECRET` before any non-local deployment.
+
+Set `RUN_SEED=true` to invoke the seed at container startup. By default it skips any database that already contains users or products. Set `FORCE_SEED=true` to bypass that empty-database guard; the operation remains insert-only.
 
 ## API conventions
 
@@ -40,7 +46,7 @@ The seed also creates eight categories and 25 realistic catalog products, with p
 - Lists use `data: { items, meta: { total, page, limit, totalPages, hasNext, hasPrev } }` (notifications also include `unreadCount`).
 - Errors use `{ "statusCode", "code", "message", "error", "details?", "timestamp", "path" }`.
 - Attach `Authorization: Bearer <accessToken>` to protected routes.
-- Product image uploads accept jpeg/png/webp with matching extension and MIME type, random server-generated filenames, and a configurable 2 MB default cap.
+- Product image uploads accept jpeg/png/webp with matching extension, MIME type, and file signature, random server-generated filenames, and a configurable 2 MB default cap.
 
 ## Architecture
 
@@ -59,7 +65,7 @@ PostgreSQL 16 ← Prisma migrations/seed ← NestJS REST API → uploads volume
                                             └─ InventoryPort → in-memory demo adapter
 ```
 
-Product records do not contain stock. Products and Orders use only `INVENTORY_PORT`; Requirement 2 can replace the provider with a gRPC adapter without changing those modules. The demo adapter keeps stock in process memory, so stock overrides and reservations reset when the backend process restarts; database records and uploaded images remain in persistent volumes.
+Product records do not contain stock. Products and Orders use only `INVENTORY_PORT`; Requirement 2 can replace the provider with a persistent inventory service without changing those modules. The demo adapter keeps stock in process memory, so stock overrides and reservations reset when the backend process restarts. Seed products use external image URLs, while uploaded product images use relative `/uploads/...` paths.
 
 ## Routes and roles
 
@@ -81,7 +87,7 @@ Product records do not contain stock. Products and Orders use only `INVENTORY_PO
 | GET | `/notifications` | Any authenticated | Own notifications, newest first |
 | PATCH | `/notifications/:id/read`, `/notifications/read-all` | Any authenticated | Mark own notification(s) read |
 
-Allowed order transitions: PENDING→CONFIRMED→SHIPPED→DELIVERED, with cancellation allowed from PENDING or CONFIRMED. Invalid transitions return `409 INVALID_STATUS_TRANSITION`. The in-memory inventory adapter reserves all requested items before the database transaction; a failed DB transaction triggers a compensating release.
+Allowed order transitions: PENDING→CONFIRMED→SHIPPED→DELIVERED, with cancellation allowed from PENDING or CONFIRMED. Invalid or concurrent transitions return `409 INVALID_STATUS_TRANSITION`. The database conditionally applies each transition; cancellation releases stock after commit, so concurrent cancellation can release a reservation only once. Reservations use order IDs as idempotency references; a repeated reserve does not decrement stock twice, and a repeated or unknown release does not add stock.
 
 ## Tests and demo
 
@@ -91,7 +97,12 @@ npm run build
 npm run test:e2e
 ```
 
-`npm run test:e2e` starts `docker-compose.test.yml` (PostgreSQL on port 5433), applies migrations and seed, then runs the e2e suite. Docker Desktop must be running. Run `sh scripts/demo.sh` to walk through login, product listing, order creation, cross-user `403`, invalid-transition `409`, and login rate limit `429` (requires curl and Node; jq is optional).
+`npm run test:e2e` starts `docker-compose.test.yml` (PostgreSQL on port 5433), applies migrations and seed, then runs the e2e suite. Docker Desktop must be running. Run `sh scripts/check-migrations.sh` with `SHADOW_DATABASE_URL` set to an empty PostgreSQL database to detect schema drift. Run `sh scripts/demo.sh` to walk through login, product listing, order creation, cross-user `403`, invalid-transition `409`, and login rate limit `429` (requires curl and Node; jq is optional).
+
+## Known limitations
+
+- Inventory is an in-memory stub. Stock resets to `STUB_DEFAULT_STOCK` when the backend restarts; Requirement 2 replaces it with a persistent service behind the same `InventoryPort`.
+- Seed products use external image URLs, while uploaded images use relative `/uploads/...` paths.
 
 ## Non-functional requirement → implementation → proof
 
@@ -107,7 +118,9 @@ npm run test:e2e
 | Validation | Global `ValidationPipe`, DTO validators, max page size 100 | e2e: unknown fields and limit=1000 return 400 |
 | Password hashing | bcryptjs in UsersService/AuthService | Seed/register use bcrypt; API response tests assert sensitive fields absent |
 | Unified errors | `AllExceptionsFilter`, stable code field, Prisma P2002/P2025 mapping | e2e asserts `FORBIDDEN`, `INSUFFICIENT_STOCK`, `INVALID_STATUS_TRANSITION`, `TOO_MANY_REQUESTS` |
-| Transactions/compensation | Order row/items/notification transaction; InventoryPort reserve/release | unit test asserts release after database transaction failure |
+| Concurrency-safe status changes | Conditional order status update in the database; cancellation releases after commit | e2e races two cancellation requests and verifies stock is restored once |
+| Compensation on partial failures | Failed order creation releases its idempotent inventory reservation; failed product stock initialization deletes the product row | unit tests cover order compensation and product row cleanup |
+| Non-destructive seed | Empty-database guard; forced seed is insert-only | e2e edits, deactivates, and renames seeded data before rerunning the seed |
 | Docker hardening | Node user, private DB, no production pgAdmin, named volumes | inspect Dockerfile/Compose; clean compose boot and restart persistence |
 
 ## Project scripts

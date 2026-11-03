@@ -1,9 +1,14 @@
 import { PrismaClient, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
-
-async function main() {
+export async function runSeed(prisma: PrismaClient) {
+  if (process.env.FORCE_SEED !== 'true') {
+    const [userCount, productCount] = await Promise.all([prisma.user.count(), prisma.product.count()]);
+    if (userCount > 0 || productCount > 0) {
+      console.log('Seed skipped: database already contains data');
+      return;
+    }
+  }
   const password = await bcrypt.hash('Admin@123', 10);
   await prisma.user.upsert({ where: { email: 'admin@store.com' }, update: {}, create: { email: 'admin@store.com', username: 'admin', password, firstName: 'Store', lastName: 'Admin', role: Role.ADMIN } });
   await prisma.user.upsert({ where: { email: 'customer@test.com' }, update: {}, create: { email: 'customer@test.com', username: 'testcustomer', password, firstName: 'Test', lastName: 'Customer', role: Role.CUSTOMER } });
@@ -21,7 +26,7 @@ async function main() {
   ];
   const categories = {} as Record<string, string>;
   for (const category of categoryRows) {
-    const row = await prisma.category.upsert({ where: { slug: category.slug }, update: { name: category.name }, create: category });
+    const row = await prisma.category.upsert({ where: { slug: category.slug }, update: {}, create: category });
     categories[category.slug] = row.id;
   }
   const products = [
@@ -53,10 +58,12 @@ async function main() {
   ] as const;
   for (const { name, description, price, slug, imageUrl } of products) {
     const existing = await prisma.product.findFirst({ where: { name } });
-    if (existing) await prisma.product.update({ where: { id: existing.id }, data: { description, price, categoryId: categories[slug], imageUrl, isActive: true } });
-    else await prisma.product.create({ data: { name, description, price, categoryId: categories[slug], imageUrl } });
+    if (!existing) await prisma.product.create({ data: { name, description, price, categoryId: categories[slug], imageUrl } });
   }
   console.log(`Seed complete: demo users, ${categoryRows.length} categories, ${products.length} products with image URLs.`);
 }
 
-main().catch((error) => { console.error('Seed failed', error); process.exit(1); }).finally(() => prisma.$disconnect());
+if (require.main === module) {
+  const prisma = new PrismaClient();
+  runSeed(prisma).catch((error) => { console.error('Seed failed', error); process.exitCode = 1; }).finally(() => prisma.$disconnect());
+}

@@ -13,7 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "ts-node prisma/seed.ts",
+   "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
     "test": "jest --runInBand",
     "test:e2e": "node scripts/run-e2e.js",
     "test:cov": "jest --coverage --runInBand"
