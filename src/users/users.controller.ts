@@ -97,7 +97,7 @@ export class UsersController {
   @ApiOperation({
     summary: 'Get user by ID (Admin only)',
     description:
-      'ID must be a valid UUID (400 otherwise). Use `GET /users` first to obtain the list of IDs.',
+      'ID must be a valid UUID. Use `GET /users` first to obtain the list of IDs.',
   })
   @ApiParam({ name: 'id', description: 'User UUID', example: '550e8400-e29b-41d4-a716-446655440000' })
   @ApiSuccessResponse(UserResponseDto, 200, 'User details')

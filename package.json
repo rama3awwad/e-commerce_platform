@@ -13,7 +13,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "ts-node prisma/seed.ts"
+   "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "test": "jest --runInBand",
+    "test:e2e": "node scripts/run-e2e.js",
+    "test:cov": "jest --coverage --runInBand"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -32,6 +35,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "helmet": "^8.0.0",
+    "multer": "^2.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "prisma": "^6.2.1",
@@ -44,8 +48,14 @@
     "@nestjs/testing": "^10.4.22",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.10.5",
     "@types/passport-jwt": "^4.0.1",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.1",
+    "ts-jest": "^29.4.15",
     "ts-node-dev": "^2.0.0"
   }
 }
