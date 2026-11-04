@@ -24,7 +24,26 @@ export class ProductsService {
     return { items: rows.map((p) => ({ ...p, stock: stocks[p.id] })), meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page < Math.ceil(total / limit), hasPrev: page > 1 } };
   }
   async findOne(id: string) { const p = await this.prisma.product.findFirst({ where: { id, isActive: true }, include: { category: true } }); if (!p) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found' }); return { ...p, stock: await this.stock(id) }; }
-  async create(dto: CreateProductDto, imageUrl?: string) { if (!await this.prisma.category.findUnique({ where: { id: dto.categoryId } })) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Category not found' }); const product = await this.prisma.product.create({ data: { ...dto, imageUrl, price: dto.price } }); try { await this.inventory.setStock(product.id, Number(process.env.STUB_DEFAULT_STOCK || 50)); } catch { try { await this.prisma.product.delete({ where: { id: product.id } }); } catch (deleteError) { this.logger.error(`Failed to remove product ${product.id} after inventory initialization failed`, deleteError instanceof Error ? deleteError.stack : undefined); } throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable'); } return this.findOne(product.id); }
+ 
+  async create(dto: CreateProductDto, imageUrl?: string)
+  {
+    if (!await this.prisma.category.findUnique({ where: { id: dto.categoryId } }))
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Category not found' });
+    const product = await this.prisma.product.create({ data: { ...dto, imageUrl, price: dto.price } });
+    try {
+      //await this.inventory.setStock(product.id, Number(process.env.STUB_DEFAULT_STOCK || 50));
+      const initialStock = dto.stock !== undefined ? dto.stock : Number(process.env.STUB_DEFAULT_STOCK || 50);
+      await this.inventory.setStock(product.id, initialStock);
+    }
+    catch {
+      try { await this.prisma.product.delete({ where: { id: product.id } }); }
+      catch (deleteError) {
+        this.logger.error(`Failed to remove product ${product.id}
+         after inventory initialization failed`, deleteError instanceof Error ? deleteError.stack : undefined);
+      } throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable');
+    } return this.findOne(product.id);
+  }
+
   async update(id: string, dto: UpdateProductDto, imageUrl?: string) { await this.findOne(id); if (dto.categoryId && !await this.prisma.category.findUnique({ where: { id: dto.categoryId } })) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Category not found' }); const data = { ...dto, ...(imageUrl ? { imageUrl } : {}) }; await this.prisma.product.update({ where: { id }, data }); return this.findOne(id); }
   async setStock(id: string, quantity: number) { await this.findOne(id); try { await this.inventory.setStock(id, quantity); } catch { throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable'); } return this.findOne(id); }
   async remove(id: string) {
