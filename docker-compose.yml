@@ -1,5 +1,7 @@
-
 services:
+  # ============================================================
+  #  قاعدة بيانات تطبيق NestJS
+  # ============================================================
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -17,6 +19,59 @@ services:
       timeout: 5s
       retries: 10
 
+  # ============================================================
+  #  قاعدة بيانات خدمة المخزون (Spring Boot)
+  # ============================================================
+  inventory-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${INV_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${INV_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${INV_DB_NAME:-inventory_db}
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INV_DB_USER:-postgres} -d ${INV_DB_NAME:-inventory_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ============================================================
+  #  خدمة المخزون - Spring Boot + gRPC
+  # ============================================================
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: inventory-db
+      DB_PORT: 5432
+      DB_NAME: ${INV_DB_NAME:-inventory_db}
+      DB_USER: ${INV_DB_USER:-postgres}
+      DB_PASSWORD: ${INV_DB_PASSWORD:-postgres}
+      GRPC_PORT: 9090
+      SERVER_PORT: 8081
+      DDL_AUTO: update
+      LOG_LEVEL: INFO
+      SQL_LOG_LEVEL: WARN
+    ports:
+      - "8081:8081"   # Actuator/health (مفيد للتطوير، يمكن حذفه في الإنتاج)
+      # ملاحظة: لا نُعرّض 9090 خارجياً — gRPC اتصال داخلي بين الحاويات
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # ============================================================
+  #  تطبيق NestJS الأساسي
+  # ============================================================
   backend:
     build:
       context: .
@@ -39,6 +94,9 @@ services:
       UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-2097152}
       STUB_DEFAULT_STOCK: ${STUB_DEFAULT_STOCK:-50}
       RUN_SEED: ${RUN_SEED:-true}
+      # ====== إعدادات خدمة المخزون (المتطلب الثاني) ======
+      INVENTORY_GRPC_URL: "inventory-service:9090"
+      INVENTORY_GRPC_DEADLINE_MS: "3000"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
@@ -46,13 +104,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:${PORT:-3000}/api/v1/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      inventory-service:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  inventory_data:
   uploads:

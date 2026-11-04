@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package inventory.v1;
+
+// ============================================================
+//  خدمة المخزون - المتطلب الثاني (التواصل بين الخدمات)
+//  ----------------------------------------------------------
+//  العقد المشترك (canonical) بين:
+//    - تطبيق NestJS (TypeScript)  ← consumer
+//    - خدمة Spring Boot (Java)     ← provider
+//
+//  كل تعديل في هذا الملف ينعكس على الطرفين تلقائياً عند البناء:
+//    - في NestJS:        عبر @grpc/proto-loader (قراءة ديناميكية)
+//    - في Spring Boot:   عبر protobuf-maven-plugin (توليد stubs)
+//
+//  العمليات الأربع:
+//    1) GetStock      : معرفة الكمية المتوفرة لمنتج
+//    2) SetStock      : تهيئة أو تعديل كمية منتج (نداء إداري من NestJS)
+//    3) ReserveStock  : حجز كميات كل منتجات الطلب دفعة واحدة (كله أو لا شيء)
+//    4) ReleaseStock  : إرجاع الكمية المحجوزة عند فشل حفظ الطلب أو إلغائه
+//
+//  ملاحظات تصميمية:
+//    - نقص الكمية ليس خطأ gRPC، بل success=false مع shortages،
+//      فيميّز NestJS بين "الكمية غير كافية" (409) و"المخزون متوقف" (503).
+//    - reservation_id هو مفتاح Idempotency: تكرار أي عملية بنفس المعرّف آمن.
+//    - ReleaseStock يأخذ المعرّف فقط، لأن الخدمة تخزّن بنود كل حجز.
+// ============================================================
+
+option java_multiple_files = true;
+option java_package = "com.store.inventory.grpc";
+
+service InventoryService {
+  rpc GetStock      (GetStockRequest)      returns (GetStockResponse);
+  rpc SetStock      (SetStockRequest)      returns (SetStockResponse);
+  rpc ReserveStock  (ReserveStockRequest)  returns (ReserveStockResponse);
+  rpc ReleaseStock  (ReleaseStockRequest)  returns (ReleaseStockResponse);
+}
+
+// ---------- عنصر مخزون مشترك ----------
+
+message StockItem {
+  string product_id = 1;
+  int32  quantity   = 2;
+}
+
+// ---------- 1) GetStock ----------
+
+message GetStockRequest {
+  string product_id = 1;
+}
+
+message GetStockResponse {
+  string product_id = 1;
+  int32  available  = 2; // الكمية المتوفرة فعلاً (بعد خصم المحجوز)
+}
+
+// ---------- 2) SetStock ----------
+
+message SetStockRequest {
+  string product_id = 1;
+  int32  quantity   = 2;
+}
+
+message SetStockResponse {
+  bool  success   = 1;
+  int32 available = 2; // الكمية بعد التعديل
+}
+
+// ---------- 3) ReserveStock ----------
+
+message ReserveStockRequest {
+  // معرّف فريد يولّده NestJS (UUID) قبل الاستدعاء.
+  // هو مفتاح Idempotency: تكرار ReserveStock بنفس المعرّف يُرجع النتيجة السابقة دون حجز مرتين.
+  string reservation_id = 1;
+
+  // كل منتجات الطلب دفعة واحدة. العملية ذرّية: كله أو لا شيء.
+  repeated StockItem items = 2;
+}
+
+message ItemShortage {
+  string product_id = 1;
+  int32  requested  = 2; // الكمية المطلوبة في الطلب
+  int32  available  = 3; // الكمية المتوفرة فعلاً
+}
+
+message ReserveStockResponse {
+  // true  : حُجزت كل الكميات بنجاح
+  // false : كميات غير كافية، اقرأ shortages لمعرفة التفاصيل
+  bool                  success    = 1;
+
+  // تُملأ فقط عند success=false. مفتاح لتوليد رسالة خطأ واضحة للمستخدم
+  // (مثلاً: "المنتج X متوفر 3 وحدات فقط، وطلبتَ 5").
+  repeated ItemShortage shortages = 2;
+}
+
+// ---------- 4) ReleaseStock ----------
+
+message ReleaseStockRequest {
+  // المعرّف فقط، لأن الخدمة تخزّن بنود الحجز في جدول reservations
+  // وتعرف الكميات التي يجب إرجاعها.
+  string reservation_id = 1;
+}
+
+message ReleaseStockResponse {
+  // true  : أُرجعت الكمية فعلاً (الحجز كان ACTIVE)
+  // false : لا شيء لترجيعه (الحجز غير موجود، أو مُرجَع مسبقاً، أو مُلغى)
+  bool released = 1;
+}
