@@ -1,0 +1,44 @@
+# ====================================================================
+#  إعدادات خدمة المخزون - Spring Boot
+# ====================================================================
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:inventory_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${DDL_AUTO:update}
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health,info,metrics
+    endpoint:
+      health:
+        show-details: when_authorized
+
+grpc:
+  server:
+    port: ${GRPC_PORT:9090}
+    security:
+      enabled: false
+
+server:
+  port: ${SERVER_PORT:8081}
+
+logging:
+  level:
+    com.store.inventory: ${LOG_LEVEL:DEBUG}
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:DEBUG}
+    org.hibernate.orm.jdbc.bind: TRACE
