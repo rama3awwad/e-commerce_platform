@@ -1,0 +1,17 @@
+# تشغيل واجهة المتجر بـ Docker
+# ملاحظة: شغّل docker-compose.yml تبع الباك أولاً (ريبو e-commerce_platform)
+# ثم شغّل هالملف من مجلد الفرونت. المتصفح بيطلب الـ API مباشرة من
+# localhost:3000 (المنشور من كونتينر الباك)، فما في حاجة لنفس الشبكة.
+#
+#   docker compose up --build
+#   الواجهة: http://localhost:5173
+#
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    ports:
+      - "5173:80"
