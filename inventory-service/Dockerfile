@@ -7,15 +7,15 @@ FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /build
 
 # انسخ pom.xml أولاً (للاستفادة من Docker layer caching)
-COPY pom.xml .
+COPY inventory-service/pom.xml .
 # انسخ ملف proto المشترك
-COPY ../proto /build/proto
+COPY proto /build/proto
 
 # حمّل الـdependencies فقط (إذا لم يتغير pom.xml، هذه الطبقة تُخزَّن)
 RUN mvn dependency:go-offline -B || true
-
+COPY proto /proto
 # انسخ باقي المصادر
-COPY src ./src
+COPY inventory-service/src ./src
 
 # بناء المشروع (تخطَّى الاختبارات)
 RUN mvn clean package -DskipTests -B

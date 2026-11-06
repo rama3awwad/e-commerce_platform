@@ -15,7 +15,7 @@ import * as path from 'path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 
-const PROTO_PATH = path.join(__dirname, '../../proto/inventory.proto');
+const PROTO_PATH = path.join(__dirname, '../proto/inventory.proto');
 const INVENTORY_URL = process.env.INVENTORY_GRPC_URL || 'localhost:9090';
 const DEFAULT_STOCK = Number(process.env.STUB_DEFAULT_STOCK || 50);
 
