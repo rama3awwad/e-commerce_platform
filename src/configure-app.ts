@@ -2,10 +2,16 @@ import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import express = require('express');
+import type {
+  Request,
+  Response,
+  NextFunction
+} from 'express';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+
 
 export function configureApp(app: INestApplication) {
   app.use(helmet());
@@ -18,7 +24,23 @@ export function configureApp(app: INestApplication) {
 
   const uploadDir = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads');
   mkdirSync(uploadDir, { recursive: true });
-  app.use('/uploads', express.static(uploadDir));
+  // app.use('/uploads', express.static(uploadDir));
+ app.use(
+  '/uploads',
+  (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    res.setHeader(
+      'Cross-Origin-Resource-Policy',
+      'cross-origin'
+    );
+
+    next();
+  },
+  express.static(uploadDir)
+);
 
   const config = new DocumentBuilder()
     .setTitle('E-Commerce Platform API')

@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-ecommerce_db}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -42,8 +42,8 @@ services:
   # ============================================================
   inventory-service:
     build:
-      context: ./inventory-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: inventory-service/Dockerfile
     restart: unless-stopped
     environment:
       DB_HOST: inventory-db
@@ -57,7 +57,7 @@ services:
       LOG_LEVEL: INFO
       SQL_LOG_LEVEL: WARN
     ports:
-      - "8081:8081"   # Actuator/health (مفيد للتطوير، يمكن حذفه في الإنتاج)
+      - "9090:9090"   # Actuator/health (مفيد للتطوير، يمكن حذفه في الإنتاج)
       # ملاحظة: لا نُعرّض 9090 خارجياً — gRPC اتصال داخلي بين الحاويات
     depends_on:
       inventory-db:
