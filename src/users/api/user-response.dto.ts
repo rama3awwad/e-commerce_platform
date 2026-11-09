@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role } from '../../common/enums/role.enum';
 
 export class UserResponseDto {
   @ApiProperty({
@@ -57,3 +57,5 @@ export class UserResponseDto {
   })
   updatedAt: Date;
 }
+
+

@@ -19,9 +19,9 @@ echo 'Another customer receives 403 reading the order'
 OTHER_JSON="$(login customer2@test.com)"
 OTHER_TOKEN="$(printf '%s' "$OTHER_JSON" | json_value data.accessToken)"
 curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $OTHER_TOKEN" "$BASE_URL/orders/$ORDER_ID"
-echo 'Admin gets 409 for invalid PENDING to DELIVERED transition'
+echo 'Admin gets 409 for invalid PENDING to PENDING transition'
 ADMIN_JSON="$(login admin@store.com)"
 ADMIN_TOKEN="$(printf '%s' "$ADMIN_JSON" | json_value data.accessToken)"
-curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"status":"DELIVERED"}' "$BASE_URL/orders/$ORDER_ID/status"
+curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"status":"PENDING"}' "$BASE_URL/orders/$ORDER_ID/status"
 echo 'Exceed login throttle; final attempt should return 429'
 for n in 1 2 3; do curl -sS -o /dev/null -w "attempt $n: HTTP %{http_code}\n" -H 'Content-Type: application/json' -d "{\"identifier\":\"admin@store.com\",\"password\":\"$PASSWORD\"}" "$BASE_URL/auth/login"; done

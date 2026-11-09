@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-npx prisma migrate deploy
+npm run prisma:deploy
 if [ "${RUN_SEED:-false}" = "true" ]; then
   npm run prisma:seed
 fi

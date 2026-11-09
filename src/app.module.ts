@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
@@ -19,7 +18,8 @@ import { InventoryModule } from './inventory/inventory.module';
       isGlobal: true,
       envFilePath: ['.env'],
       validate: (config) => {
-        if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required');
+        if (!config.INTERNAL_API_TOKEN || config.INTERNAL_API_TOKEN.length < 16) throw new Error('INTERNAL_API_TOKEN must be at least 16 characters');
+        for (const key of ['USERS_DATABASE_URL','PRODUCTS_DATABASE_URL','ORDERS_DATABASE_URL','NOTIFICATIONS_DATABASE_URL']) if (!config[key]) throw new Error(`${key} is required`);
         if (!config.JWT_SECRET || config.JWT_SECRET.length < 32) throw new Error('JWT_SECRET is required and must be at least 32 characters');
         return config;
       },
@@ -40,7 +40,6 @@ import { InventoryModule } from './inventory/inventory.module';
     }),
 
     // ===== Database =====
-    PrismaModule,
 
     // ===== Features =====
     UsersModule,

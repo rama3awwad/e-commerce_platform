@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ClientGrpc } from '@nestjs/microservices';
 import { lastValueFrom, Observable, timeout } from 'rxjs';
-import { InventoryPort, ReservationItem, ReserveResult } from './inventory.port';
+import { InventoryPort, ReservationItem, ReserveResult } from './api/inventory.port';
 
 // gRPC client interface
 // تطابق service InventoryService المعرفة في proto/inventory.proto

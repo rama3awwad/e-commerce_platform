@@ -1,19 +1,23 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient as UsersPrismaClient, Role } from '../node_modules/.prisma/users-client';
+import { PrismaClient as ProductsPrismaClient } from '../node_modules/.prisma/products-client';
 import * as bcrypt from 'bcryptjs';
 
-export async function runSeed(prisma: PrismaClient) {
-  if (process.env.FORCE_SEED !== 'true') {
-    const [userCount, productCount] = await Promise.all([prisma.user.count(), prisma.product.count()]);
-    if (userCount > 0 || productCount > 0) {
-      console.log('Seed skipped: database already contains data');
-      return;
-    }
-  }
+export async function runSeed(prisma: { users: UsersPrismaClient; products: ProductsPrismaClient }) {
+  await seedUsers(prisma.users);
+  await seedCatalog(prisma.products);
+}
+
+export async function seedUsers(prisma: UsersPrismaClient) {
+  if (process.env.FORCE_SEED !== 'true' && await prisma.user.count() > 0) { console.log('User seed skipped: users already exist'); return; }
   const password = await bcrypt.hash('Admin@123', 10);
   await prisma.user.upsert({ where: { email: 'admin@store.com' }, update: {}, create: { email: 'admin@store.com', username: 'admin', password, firstName: 'Store', lastName: 'Admin', role: Role.ADMIN } });
   await prisma.user.upsert({ where: { email: 'customer@test.com' }, update: {}, create: { email: 'customer@test.com', username: 'testcustomer', password, firstName: 'Test', lastName: 'Customer', role: Role.CUSTOMER } });
   await prisma.user.upsert({ where: { email: 'customer2@test.com' }, update: {}, create: { email: 'customer2@test.com', username: 'testcustomer2', password, firstName: 'Second', lastName: 'Customer', role: Role.CUSTOMER } });
 
+}
+
+export async function seedCatalog(prisma: ProductsPrismaClient) {
+  if (process.env.FORCE_SEED !== 'true' && await prisma.product.count() > 0) { console.log('Catalog seed skipped: products already exist'); return; }
   const categoryRows = [
     { name: 'Clothing', slug: 'clothing' },
     { name: 'Footwear', slug: 'footwear' },
@@ -64,6 +68,6 @@ export async function runSeed(prisma: PrismaClient) {
 }
 
 if (require.main === module) {
-  const prisma = new PrismaClient();
-  runSeed(prisma).catch((error) => { console.error('Seed failed', error); process.exitCode = 1; }).finally(() => prisma.$disconnect());
+  const users = new UsersPrismaClient(); const products = new ProductsPrismaClient();
+  runSeed({ users, products }).catch((error) => { console.error('Seed failed', error); process.exitCode = 1; }).finally(async () => { await users.$disconnect(); await products.$disconnect(); });
 }

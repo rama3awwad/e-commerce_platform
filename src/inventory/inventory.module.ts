@@ -1,6 +1,6 @@
 /*import { Module } from '@nestjs/common';
 import { InMemoryInventoryAdapter } from './in-memory-inventory.adapter';
-import { INVENTORY_PORT } from './inventory.port';
+import { INVENTORY_PORT } from './api/inventory.port';
 
 @Module({ providers: [InMemoryInventoryAdapter, { provide: INVENTORY_PORT, useExisting: InMemoryInventoryAdapter }], exports: [INVENTORY_PORT] })
 // Requirement 2 can replace this provider with a gRPC-backed adapter without changing Products or Orders.
@@ -11,7 +11,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { GrpcInventoryAdapter } from './grpc-inventory.adapter';
-import { INVENTORY_PORT } from './inventory.port';
+import { INVENTORY_PORT } from './api/inventory.port';
 
 /**
  * وحدة المخزون - تستخدم GrpcInventoryAdapter للحجز والإرجاع عبر gRPC.

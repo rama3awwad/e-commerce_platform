@@ -9,7 +9,10 @@ import { VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as fs from 'fs';
 import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { UsersPrismaService } from '../src/users/prisma/users-prisma.service';
+import { ProductsPrismaService } from '../src/products/prisma/products-prisma.service';
+import { OrdersPrismaService } from '../src/orders/prisma/orders-prisma.service';
+import { NotificationsPrismaService } from '../src/notifications/prisma/notifications-prisma.service';
 
 async function main() {
   const stub = {
@@ -19,8 +22,10 @@ async function main() {
   };
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PrismaService)
-    .useValue(stub)
+    .overrideProvider(UsersPrismaService).useValue(stub)
+    .overrideProvider(ProductsPrismaService).useValue(stub)
+    .overrideProvider(OrdersPrismaService).useValue(stub)
+    .overrideProvider(NotificationsPrismaService).useValue(stub)
     .compile();
 
   const app = moduleRef.createNestApplication({ logger: false });

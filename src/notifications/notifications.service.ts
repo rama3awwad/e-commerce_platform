@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+
+import { NotificationsPrismaService } from './prisma/notifications-prisma.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 import { CodedException } from '../common/exceptions/coded.exception';
 
-type Db = PrismaService | Prisma.TransactionClient;
+
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
-  create(userId: string, type: string, title: string, message: string, db: Db = this.prisma) { return db.notification.create({ data: { userId, type, title, message } }); }
+  constructor(private readonly prisma: NotificationsPrismaService) {}
+  create(userId: string, type: string, title: string, message: string) { return this.prisma.notification.create({ data: { userId, type, title, message } }); }
   async list(userId: string, query: NotificationQueryDto) {
     const { page = 1, limit = 10 } = query; const where = { userId };
     const [items, total, unreadCount] = await Promise.all([this.prisma.notification.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }), this.prisma.notification.count({ where }), this.prisma.notification.count({ where: { userId, isRead: false } })]);

@@ -10,7 +10,7 @@
  * 
  * استخدم هذا السكربت بعد أول تشغيل لـseed، أو بعد استيراد بيانات تجريبية جديدة.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../node_modules/.prisma/products-client';
 import * as path from 'path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';

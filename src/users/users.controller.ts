@@ -20,7 +20,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserResponseDto } from './dto/user-response.dto';
+import { UserResponseDto } from './api/user-response.dto';
 import { MessageResponseDto } from '../common/dto/message-response.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { Auth } from '../common/decorators/auth.decorator';
@@ -30,7 +30,7 @@ import {
   ApiPaginatedResponse,
   ApiErrorResponse,
 } from '../common/swagger/swagger.decorators';
-import { Role } from '@prisma/client';
+import { Role } from '../common/enums/role.enum';
 
 @ApiTags('users')
 @ApiBearerAuth('JWT-auth')

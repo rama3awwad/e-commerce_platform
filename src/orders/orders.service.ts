@@ -1,8 +1,10 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma, Role } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { INVENTORY_PORT, InventoryPort } from '../inventory/inventory.port';
-import { NotificationsService } from '../notifications/notifications.service';
+import { OrderStatus, Prisma } from '.prisma/orders-client';
+import { Role } from '../common/enums/role.enum';
+import { OrdersPrismaService } from './prisma/orders-prisma.service';
+import { INVENTORY_PORT, InventoryPort } from '../inventory/api/inventory.port';
+import { NotificationsApi } from '../notifications/api/notifications.api';
+import { ProductsApi } from '../products/api/products.api';
 import { CodedException } from '../common/exceptions/coded.exception';
 import { CreateOrderDto, OrderQueryDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { canTransition } from './order-transitions';
@@ -11,10 +13,10 @@ import { randomUUID } from 'crypto';
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
-  constructor(private readonly prisma: PrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi) {}
 
   async create(userId: string, dto: CreateOrderDto) {
-    const products = await this.prisma.product.findMany({ where: { id: { in: dto.items.map((i) => i.productId) }, isActive: true } });
+    const products = await this.products.findActiveByIds(dto.items.map((i) => i.productId));
     if (products.length !== dto.items.length) throw new NotFoundException({ code: 'NOT_FOUND', message: 'One or more products do not exist or are inactive' });
     const reserveItems = dto.items.map(({ productId, quantity }) => ({ productId, quantity }));
     const id = randomUUID();
@@ -26,11 +28,11 @@ export class OrdersService {
     } catch (error) { if (error instanceof CodedException) throw error; throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable'); }
     try {
       const order = await this.prisma.$transaction(async (tx) => {
-        const totalAmount = dto.items.reduce((sum, item) => { const p = products.find((x) => x.id === item.productId)!; return sum.plus(p.price.mul(item.quantity)); }, new Prisma.Decimal(0));
-        const created = await tx.order.create({ data: { id, userId, totalAmount, items: { create: dto.items.map((item) => { const p = products.find((x) => x.id === item.productId)!; return { productId: p.id, quantity: item.quantity, unitPrice: p.price }; }) } }, include: { items: true } });
-        await this.notifications.create(userId, 'ORDER_CREATED', 'Order created', `Order #${created.orderNumber} was created.`, tx);
+        const totalAmount = dto.items.reduce((sum, item) => { const p = products.find((x) => x.id === item.productId)!; return sum.plus(new Prisma.Decimal(p.price).mul(item.quantity)); }, new Prisma.Decimal(0));
+        const created = await tx.order.create({ data: { id, userId, totalAmount, items: { create: dto.items.map((item) => { const p = products.find((x) => x.id === item.productId)!; return { productId: p.id, quantity: item.quantity, unitPrice: new Prisma.Decimal(p.price) }; }) } }, include: { items: true } });
         return created;
       });
+      await this.notifySafely(userId, 'ORDER_CREATED', 'Order created', `Order #${order.orderNumber} was created.`);
       return order;
     } catch (error) {
       if (reserved) { try { await this.inventory.release(id, reserveItems); } catch (releaseError) { this.logger.error('Inventory compensation failed after order transaction error', releaseError instanceof Error ? releaseError.stack : undefined); } }
@@ -53,7 +55,7 @@ export class OrdersService {
   async changeStatus(id: string, status: OrderStatus, requester: { id: string; role: Role }, ownerCancel = false) {
     const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Order not found' });
-    if (ownerCancel) { if (order.userId !== requester.id) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'You cannot cancel another user\'s order' }); if (requester.role !== Role.CUSTOMER) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Only the order owner can cancel it' }); }
+    if (ownerCancel) { const isOwnerCustomer = order.userId === requester.id && requester.role === Role.CUSTOMER; if (!isOwnerCustomer && requester.role !== Role.ADMIN) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'You cannot cancel this order' }); }
     else if (requester.role !== Role.ADMIN) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Only administrators can change order status' });
     if (!canTransition(order.status, status)) throw new CodedException(409, 'INVALID_STATUS_TRANSITION', `Cannot change order status from ${order.status} to ${status}`, { current: order.status, requested: status });
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -64,9 +66,9 @@ export class OrdersService {
           `Order status changed concurrently (now ${current?.status})`,
           { current: current?.status, requested: status });
       }
-      await this.notifications.create(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order #${order.orderNumber} is now ${status}.`, tx);
       return tx.order.findUnique({ where: { id }, include: { items: true } });
     });
+    await this.notifySafely(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order #${order.orderNumber} is now ${status}.`);
     // Commit the database transition first; reconcile logged release failures manually.
     if (status === OrderStatus.CANCELLED && updated) {
       const items = updated.items.map(({ productId, quantity }) => ({ productId, quantity }));
@@ -75,5 +77,6 @@ export class OrdersService {
     }
     return updated;
   }
+  private async notifySafely(userId: string, type: string, title: string, message: string) { try { await this.notifications.notify({ userId, type, title, message }); } catch (e) { this.logger.error(`Notification failed: ${type} for ${userId}`, e instanceof Error ? e.stack : undefined); } }
   cancel(id: string, requester: { id: string; role: Role }) { return this.changeStatus(id, OrderStatus.CANCELLED, requester, true); }
 }

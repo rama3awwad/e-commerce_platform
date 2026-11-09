@@ -8,7 +8,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role } from '../../common/enums/role.enum';
 
 export class UpdateUserDto extends PartialType(
   OmitType(CreateUserDto, ['password'] as const),

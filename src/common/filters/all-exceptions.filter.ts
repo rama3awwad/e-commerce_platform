@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { Prisma } from '@prisma/client';
+
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -48,7 +48,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       code = 'IMAGE_TOO_LARGE';
       message = 'Uploaded image exceeds the configured size limit';
       error = 'Bad Request';
-    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+    } else if (isPrismaKnownError(exception)) {
       if (exception.code === 'P2002') {
         status = HttpStatus.CONFLICT;
         code = 'CONFLICT';
@@ -88,4 +88,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private codeForStatus(status: number): string {
     return ({ 400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 409: 'CONFLICT', 429: 'TOO_MANY_REQUESTS' } as Record<number, string>)[status] ?? 'INTERNAL_ERROR';
   }
+}
+
+function isPrismaKnownError(e: unknown): e is Error & { code: string; meta?: unknown } {
+  return e instanceof Error && e.name === 'PrismaClientKnownRequestError' && typeof (e as any).code === 'string';
 }
