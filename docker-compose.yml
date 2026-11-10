@@ -83,7 +83,7 @@ services:
       PRODUCTS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
       ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
       NOTIFICATIONS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=notifications&connection_limit=5"
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-replace-with-a-long-random-internal-token-32chars}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
       INTERNAL_API_TIMEOUT_MS: ${INTERNAL_API_TIMEOUT_MS:-3000}
       JWT_USER_CACHE_TTL_SECONDS: ${JWT_USER_CACHE_TTL_SECONDS:-60}
       USERS_API_URL: ${USERS_API_URL:-http://localhost:3000/api/v1}
