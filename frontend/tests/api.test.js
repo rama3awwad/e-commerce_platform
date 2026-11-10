@@ -6,13 +6,11 @@ import { getErrorMessage } from "../src/api/errors.js";
 
 // ===== statusLabels / nextStatuses =====
 
-test("كل حالات الطلب الخمسة إلها تسمية عربية", () => {
+test("كل حالات الطلب الثلاث إلها تسمية عربية", () => {
   assert.deepEqual(Object.keys(statusLabels).sort(), [
     "CANCELLED",
     "CONFIRMED",
-    "DELIVERED",
     "PENDING",
-    "SHIPPED",
   ]);
   for (const label of Object.values(statusLabels)) {
     assert.equal(typeof label, "string");
@@ -22,14 +20,11 @@ test("كل حالات الطلب الخمسة إلها تسمية عربية", (
 
 test("التحولات المسموحة مطابقة لقواعد الباك (order-transitions)", () => {
   assert.deepEqual(nextStatuses.PENDING, ["CONFIRMED", "CANCELLED"]);
-  assert.deepEqual(nextStatuses.CONFIRMED, ["SHIPPED", "CANCELLED"]);
-  assert.deepEqual(nextStatuses.SHIPPED, ["DELIVERED"]);
-  assert.deepEqual(nextStatuses.DELIVERED, []);
+  assert.deepEqual(nextStatuses.CONFIRMED, ["CANCELLED"]);
   assert.deepEqual(nextStatuses.CANCELLED, []);
 });
 
-test("ما في تحول من حالة نهائية (DELIVERED أو CANCELLED)", () => {
-  assert.equal(nextStatuses.DELIVERED.length, 0);
+test("ما في تحول من حالة نهائية (CANCELLED)", () => {
   assert.equal(nextStatuses.CANCELLED.length, 0);
 });
 

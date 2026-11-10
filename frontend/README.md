@@ -13,7 +13,7 @@
 | `/orders` ، `/orders/:id` | طلباتي + تفاصيل الطلب + إلغاء | العميل |
 | `/notifications` | الإشعارات + تحديد كمقروء + عدّاد غير مقروء بالـ Navbar | أي مستخدم مسجل |
 | `/admin/products` | إدارة المنتجات: إضافة مع صورة (multipart)، تعديل، حذف، تعديل المخزون | المسؤول |
-| `/admin/orders` | إدارة الطلبات: كل الطلبات + تغيير الحالة PENDING→CONFIRMED→SHIPPED→DELIVERED | المسؤول |
+| `/admin/orders` | إدارة الطلبات: كل الطلبات + تغيير الحالة PENDING→CONFIRMED; cancellation from PENDING or CONFIRMED | المسؤول |
 | `/admin/categories` | إدارة الأقسام: إضافة/تعديل/حذف | المسؤول |
 | `/admin/users` | إدارة المستخدمين: بحث، إنشاء (وحدها تنشئ ADMIN)، تغيير الدور، تعطيل، حذف | المسؤول |
 

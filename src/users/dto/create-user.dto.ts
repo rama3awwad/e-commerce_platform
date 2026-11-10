@@ -8,7 +8,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role } from '../../common/enums/role.enum';
 
 export class CreateUserDto {
   @ApiProperty({ description: 'User email address', example: 'user@example.com' })

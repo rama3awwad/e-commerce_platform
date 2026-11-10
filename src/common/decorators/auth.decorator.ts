@@ -2,7 +2,7 @@ import { applyDecorators, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
-import { Role } from '@prisma/client';
+import { Role } from '../enums/role.enum';
 import { Roles } from './roles.decorator';
 import { ApiErrorResponse } from '../swagger/swagger.decorators';
 

@@ -1,8 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp } from './configure-test-app';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { createTestApp, listenInternalApiUrls } from './configure-test-app';
+import { UsersPrismaService } from '../src/users/prisma/users-prisma.service';
+import { ProductsPrismaService } from '../src/products/prisma/products-prisma.service';
+import { OrdersPrismaService } from '../src/orders/prisma/orders-prisma.service';
+import { NotificationsPrismaService } from '../src/notifications/prisma/notifications-prisma.service';
 import { readdirSync } from 'fs';
 import { join } from 'path';
 import { runSeed } from '../prisma/seed';
@@ -14,7 +17,10 @@ const { AppModule } = require('../src/app.module');
 jest.setTimeout(90000);
 describe('Requirement 1 security/API e2e', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
+  let usersPrisma: UsersPrismaService;
+  let productsPrisma: ProductsPrismaService;
+  let ordersPrisma: OrdersPrismaService;
+  let notificationsPrisma: NotificationsPrismaService;
   let adminToken: string;
   let customerAToken: string;
   let customerBToken: string;
@@ -26,15 +32,15 @@ describe('Requirement 1 security/API e2e', () => {
     process.env.LOGIN_THROTTLE_LIMIT = '5';
     process.env.LOGIN_THROTTLE_TTL = '60000';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = await createTestApp(moduleRef.createNestApplication());
-    prisma = app.get(PrismaService);
-    await prisma.user.updateMany({ where: { email: { in: ['admin@store.com', 'customer@test.com', 'customer2@test.com'] } }, data: { loginAttempts: 0, lockUntil: null } });
+    app = await createTestApp(moduleRef.createNestApplication()); await listenInternalApiUrls(app);
+    usersPrisma = app.get(UsersPrismaService); productsPrisma = app.get(ProductsPrismaService); ordersPrisma = app.get(OrdersPrismaService); notificationsPrisma = app.get(NotificationsPrismaService);
+    await usersPrisma.user.updateMany({ where: { email: { in: ['admin@store.com', 'customer@test.com', 'customer2@test.com'] } }, data: { loginAttempts: 0, lockUntil: null } });
     const http = request(app.getHttpServer());
     const login = async (identifier: string) => (await http.post('/api/v1/auth/login').send({ identifier, password: 'Admin@123' }).expect(200)).body.data.accessToken;
     adminToken = await login('admin@store.com');
     customerAToken = await login('customer@test.com');
     customerBToken = await login('customer2@test.com');
-    const category = await prisma.category.findUnique({ where: { slug: 'clothing' } });
+    const category = await productsPrisma.category.findUnique({ where: { slug: 'clothing' } });
     if (!category) throw new Error('Seed category clothing is missing');
     categoryId = category.id;
   });
@@ -95,18 +101,37 @@ describe('Requirement 1 security/API e2e', () => {
     await http.patch(`/api/v1/orders/${firstOrderId}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'CONFIRMED' }).expect(200);
     const invalidTransition = await http.patch(`/api/v1/orders/${firstOrderId}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'PENDING' }).expect(409);
     expect(invalidTransition.body.code).toBe('INVALID_STATUS_TRANSITION');
+    await http.patch(`/api/v1/orders/${firstOrderId}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'SHIPPED' }).expect(400);
+    await http.patch(`/api/v1/orders/${firstOrderId}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'DELIVERED' }).expect(400);
     const stock = await http.get(`/api/v1/products/${createdProductId}`).set('Authorization', `Bearer ${customerAToken}`).expect(200);
     expect(stock.body.data.stock).toBe(Number(process.env.STUB_DEFAULT_STOCK || 50) - 2);
+  });
+
+  it('allows admins to cancel pending and confirmed orders from both cancel routes', async () => {
+    const http = request(app.getHttpServer());
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG9sAAAAASUVORK5CYII=', 'base64');
+    const product = await http.post('/api/v1/products').set('Authorization', `Bearer ${adminToken}`).field('name', `Admin cancel ${Date.now()}`).field('price', '2').field('categoryId', categoryId).attach('image', image, { filename: 'cancel.png', contentType: 'image/png' }).expect(201);
+    await http.patch(`/api/v1/products/${product.body.data.id}/stock`).set('Authorization', `Bearer ${adminToken}`).send({quantity:20}).expect(200);
+    const create = async () => (await http.post('/api/v1/orders').set('Authorization', `Bearer ${customerAToken}`).send({items:[{productId:product.body.data.id,quantity:2}]}).expect(201)).body.data;
+    const pendingPatch = await create();
+    await http.patch(`/api/v1/orders/${pendingPatch.id}/status`).set('Authorization', `Bearer ${adminToken}`).send({status:'CANCELLED'}).expect(200);
+    const pendingCancel = await create();
+    await http.post(`/api/v1/orders/${pendingCancel.id}/cancel`).set('Authorization', `Bearer ${adminToken}`).expect(200);
+    const confirmed = await create();
+    await http.patch(`/api/v1/orders/${confirmed.id}/status`).set('Authorization', `Bearer ${adminToken}`).send({status:'CONFIRMED'}).expect(200);
+    await http.post(`/api/v1/orders/${confirmed.id}/cancel`).set('Authorization', `Bearer ${adminToken}`).expect(200);
+    const customerOwn = await create();
+    await http.post(`/api/v1/orders/${customerOwn.id}/cancel`).set('Authorization', `Bearer ${customerBToken}`).expect(403);
   });
 
   it('returns insufficient stock conflict without creating an order', async () => {
     const http = request(app.getHttpServer());
     const product = await http.post('/api/v1/products').set('Authorization', `Bearer ${adminToken}`).field('name', 'Low stock').field('price', '3').field('categoryId', String(categoryId)).attach('image', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG9sAAAAASUVORK5CYII=', 'base64'), { filename: 'low.png', contentType: 'image/png' }).expect(201);
     await http.patch(`/api/v1/products/${product.body.data.id}/stock`).set('Authorization', `Bearer ${adminToken}`).send({ quantity: 0 }).expect(200);
-    const before = await prisma.order.count();
+    const before = await ordersPrisma.order.count();
     const response = await http.post('/api/v1/orders').set('Authorization', `Bearer ${customerAToken}`).send({ items: [{ productId: product.body.data.id, quantity: 1 }] }).expect(409);
     expect(response.body.code).toBe('INSUFFICIENT_STOCK');
-    expect(await prisma.order.count()).toBe(before);
+    expect(await ordersPrisma.order.count()).toBe(before);
   });
 
   it('releases stock once when concurrent customer cancellation requests race', async () => {
@@ -174,15 +199,15 @@ describe('Requirement 1 security/API e2e', () => {
 
   it('only lets notification owners read or mark their notifications', async () => {
     const http = request(app.getHttpServer());
-    const userA = await prisma.user.findUniqueOrThrow({ where: { email: 'customer@test.com' } });
-    const userB = await prisma.user.findUniqueOrThrow({ where: { email: 'customer2@test.com' } });
-    const noticeA = await prisma.notification.create({ data: { userId: userA.id, type: 'TEST', title: 'A', message: 'A notice' } });
-    const noticeB = await prisma.notification.create({ data: { userId: userB.id, type: 'TEST', title: 'B', message: 'B notice' } });
+    const userA = await usersPrisma.user.findUniqueOrThrow({ where: { email: 'customer@test.com' } });
+    const userB = await usersPrisma.user.findUniqueOrThrow({ where: { email: 'customer2@test.com' } });
+    const noticeA = await notificationsPrisma.notification.create({ data: { userId: userA.id, type: 'TEST', title: 'A', message: 'A notice' } });
+    const noticeB = await notificationsPrisma.notification.create({ data: { userId: userB.id, type: 'TEST', title: 'B', message: 'B notice' } });
     const denied = await http.patch(`/api/v1/notifications/${noticeA.id}/read`).set('Authorization', `Bearer ${customerBToken}`).expect(403);
     expect(denied.body.code).toBe('FORBIDDEN');
     await http.patch('/api/v1/notifications/read-all').set('Authorization', `Bearer ${customerAToken}`).expect(200);
-    expect((await prisma.notification.findUniqueOrThrow({ where: { id: noticeA.id } })).isRead).toBe(true);
-    expect((await prisma.notification.findUniqueOrThrow({ where: { id: noticeB.id } })).isRead).toBe(false);
+    expect((await notificationsPrisma.notification.findUniqueOrThrow({ where: { id: noticeA.id } })).isRead).toBe(true);
+    expect((await notificationsPrisma.notification.findUniqueOrThrow({ where: { id: noticeB.id } })).isRead).toBe(false);
   });
 
   it('soft-deletes an ordered product from the catalog while preserving old order items', async () => {
@@ -198,20 +223,20 @@ describe('Requirement 1 security/API e2e', () => {
     const oldForceSeed = process.env.FORCE_SEED;
     try {
       delete process.env.FORCE_SEED;
-      await runSeed(prisma as any);
-      const shirt = await prisma.product.findFirstOrThrow({ where: { name: 'Classic T-Shirt' } });
-      const hoodie = await prisma.product.findFirstOrThrow({ where: { name: 'Cotton Hoodie' } });
-      const clothing = await prisma.category.findUniqueOrThrow({ where: { slug: 'clothing' } });
-      const countBefore = await prisma.product.count();
-      await prisma.product.update({ where: { id: shirt.id }, data: { price: 1.23 } });
-      await prisma.product.update({ where: { id: hoodie.id }, data: { isActive: false } });
-      await prisma.category.update({ where: { id: clothing.id }, data: { name: 'Renamed clothing' } });
+      await runSeed({users: usersPrisma as any, products: productsPrisma as any});
+      const shirt = await productsPrisma.product.findFirstOrThrow({ where: { name: 'Classic T-Shirt' } });
+      const hoodie = await productsPrisma.product.findFirstOrThrow({ where: { name: 'Cotton Hoodie' } });
+      const clothing = await productsPrisma.category.findUniqueOrThrow({ where: { slug: 'clothing' } });
+      const countBefore = await productsPrisma.product.count();
+      await productsPrisma.product.update({ where: { id: shirt.id }, data: { price: 1.23 } });
+      await productsPrisma.product.update({ where: { id: hoodie.id }, data: { isActive: false } });
+      await productsPrisma.category.update({ where: { id: clothing.id }, data: { name: 'Renamed clothing' } });
       process.env.FORCE_SEED = 'true';
-      await runSeed(prisma as any);
-      expect(Number((await prisma.product.findUniqueOrThrow({ where: { id: shirt.id } })).price)).toBe(1.23);
-      expect((await prisma.product.findUniqueOrThrow({ where: { id: hoodie.id } })).isActive).toBe(false);
-      expect((await prisma.category.findUniqueOrThrow({ where: { id: clothing.id } })).name).toBe('Renamed clothing');
-      expect(await prisma.product.count()).toBe(countBefore);
+      await runSeed({users: usersPrisma as any, products: productsPrisma as any});
+      expect(Number((await productsPrisma.product.findUniqueOrThrow({ where: { id: shirt.id } })).price)).toBe(1.23);
+      expect((await productsPrisma.product.findUniqueOrThrow({ where: { id: hoodie.id } })).isActive).toBe(false);
+      expect((await productsPrisma.category.findUniqueOrThrow({ where: { id: clothing.id } })).name).toBe('Renamed clothing');
+      expect(await productsPrisma.product.count()).toBe(countBefore);
     } finally {
       if (oldForceSeed === undefined) delete process.env.FORCE_SEED;
       else process.env.FORCE_SEED = oldForceSeed;
@@ -225,7 +250,7 @@ describe('isolated login rate limit', () => {
     process.env.LOGIN_THROTTLE_LIMIT = '5';
     process.env.LOGIN_THROTTLE_TTL = '60000';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = await createTestApp(moduleRef.createNestApplication());
+    app = await createTestApp(moduleRef.createNestApplication()); await listenInternalApiUrls(app);
   });
   afterAll(async () => { await app?.close(); });
   it('returns 429 after five requests using its own fresh app instance', async () => {
@@ -238,23 +263,23 @@ describe('isolated login rate limit', () => {
 
 describe('account lockout', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
+  let usersPrisma: UsersPrismaService;
   beforeAll(async () => {
     process.env.LOGIN_THROTTLE_LIMIT = '5';
     process.env.LOGIN_THROTTLE_TTL = '60000';
     process.env.ACCOUNT_LOCKOUT_ATTEMPTS = '5';
     process.env.ACCOUNT_LOCKOUT_DURATION_MINUTES = '15';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = await createTestApp(moduleRef.createNestApplication());
-    prisma = app.get(PrismaService);
-    await prisma.user.update({ where: { email: 'customer2@test.com' }, data: { loginAttempts: 0, lockUntil: null } });
+    app = await createTestApp(moduleRef.createNestApplication()); await listenInternalApiUrls(app);
+    usersPrisma = app.get(UsersPrismaService);
+    await usersPrisma.user.update({ where: { email: 'customer2@test.com' }, data: { loginAttempts: 0, lockUntil: null } });
   });
   afterAll(async () => { await app?.close(); });
   it('locks the account after the configured five failed attempts', async () => {
     const http = request(app.getHttpServer());
     for (let attempt = 0; attempt < 4; attempt++) await http.post('/api/v1/auth/login').send({ identifier: 'customer2@test.com', password: 'wrong' }).expect(401);
     await http.post('/api/v1/auth/login').send({ identifier: 'customer2@test.com', password: 'wrong' }).expect(403);
-    const user = await prisma.user.findUniqueOrThrow({ where: { email: 'customer2@test.com' } });
+    const user = await usersPrisma.user.findUniqueOrThrow({ where: { email: 'customer2@test.com' } });
     expect(user.loginAttempts).toBe(5);
     expect(user.lockUntil?.getTime()).toBeGreaterThan(Date.now());
   });

@@ -1,25 +1,19 @@
 export const statusLabels = {
   PENDING: "قيد الانتظار",
   CONFIRMED: "تم التأكيد",
-  SHIPPED: "تم الشحن",
-  DELIVERED: "تم التسليم",
   CANCELLED: "ملغي",
 };
 
 // التحولات المسموحة لحالة الطلب (نفس ترتيب الباك: order-transitions)
 export const nextStatuses = {
   PENDING: ["CONFIRMED", "CANCELLED"],
-  CONFIRMED: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["DELIVERED"],
-  DELIVERED: [],
+  CONFIRMED: ["CANCELLED"],
   CANCELLED: [],
 };
 
 // نص زر تغيير الحالة للمسؤول
 export const statusActionLabels = {
   CONFIRMED: "تأكيد الطلب",
-  SHIPPED: "شحن الطلب",
-  DELIVERED: "تسليم الطلب",
   CANCELLED: "إلغاء الطلب",
 };
 

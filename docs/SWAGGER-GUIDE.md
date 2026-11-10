@@ -6,7 +6,7 @@ Start the full stack from the repository root:
 
 ```powershell
 Copy-Item .env.example .env # only if .env does not already exist
-# Set DATABASE_URL and JWT_SECRET in .env; use the Compose service name `db` as the DB host.
+# Set USERS_DATABASE_URL, PRODUCTS_DATABASE_URL, ORDERS_DATABASE_URL, NOTIFICATIONS_DATABASE_URL and JWT_SECRET in .env; use the Compose service name `db` as the DB host.
 docker compose up --build
 ```
 
@@ -14,7 +14,7 @@ Open [Swagger UI](http://localhost:3000/api/docs). The API base path is `/api/v1
 
 If running the Nest app directly on Windows instead of in Compose, the database URL must use `localhost`/`127.0.0.1` and Postgres must be running locally or exposed by the development Compose override. Inside Compose, use host `db`. In either case the URL must begin with `postgresql://` or `postgres://`.
 
-Prisma applies committed migrations with `prisma migrate deploy`. Never edit a committed migration; create a new one with `npx prisma migrate dev --name <change>`. To check schema drift, set `SHADOW_DATABASE_URL` to an empty PostgreSQL database and run `sh scripts/check-migrations.sh`.
+Prisma applies module migrations with `npm run prisma:deploy`; generate clients with `npm run prisma:generate`. Never edit a committed migration; create a new one with `npx prisma migrate dev --name <change>`. To check schema drift, set `SHADOW_DATABASE_URL` to an empty PostgreSQL database and run `sh scripts/check-migrations.sh`.
 
 Set `RUN_SEED=true` to run demo seeding at startup. Seeding skips a database that already contains users or products unless `FORCE_SEED=true`; forced runs remain insert-only and do not overwrite existing data or reactivate products.
 
@@ -152,9 +152,8 @@ Allowed status transitions:
 | Current | Allowed next status |
 |---|---|
 | PENDING | CONFIRMED, CANCELLED |
-| CONFIRMED | SHIPPED, CANCELLED |
-| SHIPPED | DELIVERED |
-| DELIVERED | None |
+| CONFIRMED | CANCELLED |
+| CANCELLED | None |
 | CANCELLED | None |
 
 Any other or concurrent status change returns `409 INVALID_STATUS_TRANSITION`. A conditional database update arbitrates concurrent requests. Cancellation commits the status first and then releases reserved stock; a release failure is logged for manual reconciliation without changing the committed response. Repeated cancellation cannot release stock again.

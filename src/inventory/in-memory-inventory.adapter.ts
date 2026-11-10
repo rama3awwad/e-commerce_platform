@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InventoryPort, ReservationItem, ReserveResult } from './inventory.port';
+import { InventoryPort, ReservationItem, ReserveResult } from './api/inventory.port';
 
 @Injectable()
 export class InMemoryInventoryAdapter implements InventoryPort {

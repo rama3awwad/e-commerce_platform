@@ -1,18 +1,21 @@
 import { OrdersService } from './orders.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import { InventoryPort } from '../inventory/inventory.port';
-import { OrderStatus, Role } from '@prisma/client';
+import { OrdersPrismaService } from './prisma/orders-prisma.service';
+import { ProductsApi } from '../products/api/products.api';
+import { NotificationsApi } from '../notifications/api/notifications.api';
+import { InventoryPort } from '../inventory/api/inventory.port';
+import { OrderStatus } from '.prisma/orders-client';
+import { Role } from '../common/enums/role.enum';
 import { Logger } from '@nestjs/common';
 
 describe('OrdersService compensation', () => {
   it('releases a successful reservation if the database transaction fails', async () => {
-    const prisma = { product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1', price: { mul: () => ({}) } }]) }, $transaction: jest.fn().mockRejectedValue(new Error('database failed')) } as unknown as PrismaService;
+    const prisma = { $transaction: jest.fn().mockRejectedValue(new Error('database failed')) } as unknown as OrdersPrismaService;
     const reserve = jest.fn().mockResolvedValue({ success: true });
     const release = jest.fn().mockResolvedValue(undefined);
     const inventory = { reserve, release } as unknown as InventoryPort;
-    const notifications = {} as NotificationsService;
-    const service = new OrdersService(prisma, inventory, notifications);
+    const notifications = { notify: jest.fn() } as unknown as NotificationsApi;
+    const products = { findActiveByIds: jest.fn().mockResolvedValue([{ id: 'p1', name: 'P', price: '1.00' }]) } as unknown as ProductsApi;
+    const service = new OrdersService(prisma, inventory, products, notifications);
     await expect(service.create('u1', { items: [{ productId: 'p1', quantity: 2 }] })).rejects.toThrow('database failed');
     expect(reserve).toHaveBeenCalledWith(expect.any(String), [{ productId: 'p1', quantity: 2 }]);
     expect(release).toHaveBeenCalledWith(reserve.mock.calls[0][0], [{ productId: 'p1', quantity: 2 }]);
@@ -28,10 +31,11 @@ describe('OrdersService status changes', () => {
         findUnique: jest.fn().mockResolvedValue(updateCount ? { ...order, status: OrderStatus.CANCELLED } : { status: OrderStatus.CANCELLED }),
       },
     };
-    const prisma = { order: { findUnique: jest.fn().mockResolvedValue(order) }, $transaction: jest.fn((callback: any) => callback(tx)) } as unknown as PrismaService;
+    const prisma = { order: { findUnique: jest.fn().mockResolvedValue(order) }, $transaction: jest.fn((callback: any) => callback(tx)) } as unknown as OrdersPrismaService;
     const inventory = { release } as unknown as InventoryPort;
-    const notifications = { create: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsService;
-    return { service: new OrdersService(prisma, inventory, notifications), tx, release };
+    const notifications = { notify: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsApi;
+    const products = { findActiveByIds: jest.fn() } as unknown as ProductsApi;
+    return { service: new OrdersService(prisma, inventory, products, notifications), tx, release };
   };
 
   it('rejects a stale status update and does not release stock', async () => {
@@ -61,5 +65,15 @@ describe('OrdersService status changes', () => {
       .resolves.toMatchObject({ status: OrderStatus.CANCELLED });
     expect(log).toHaveBeenCalledWith(expect.stringContaining('order o1'), expect.any(String));
     log.mockRestore();
+  });
+
+  it('allows an admin to cancel another customer order through cancel and releases stock once', async () => {
+    const { service, release } = setup();
+    await service.cancel('o1', { id: 'admin', role: Role.ADMIN });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a customer cancelling another user order', async () => {
+    const { service } = setup();
+    await expect(service.cancel('o1', { id: 'other', role: Role.CUSTOMER })).rejects.toMatchObject({ response: { code: 'FORBIDDEN' } });
   });
 });

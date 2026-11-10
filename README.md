@@ -4,6 +4,8 @@ NestJS 10 + Prisma 6 + PostgreSQL 16 REST API for a small e-commerce platform. T
 
 ## Run with Docker
 
+Set `USERS_DATABASE_URL`, `PRODUCTS_DATABASE_URL`, `ORDERS_DATABASE_URL`, and `NOTIFICATIONS_DATABASE_URL` in `.env` with schemas `users`, `products`, `orders`, and `notifications`. The backend uses four independent Prisma clients; run `npm run prisma:generate` to generate them and `npm run prisma:deploy` to apply module migrations.
+
 Copy the sample environment and start the application:
 
 ```sh
@@ -22,7 +24,9 @@ docker compose up --build
 
 ## Database migrations
 
-`prisma/migrations/` contains the initial schema migration. Never edit a committed migration; create a new one with `npx prisma migrate dev --name <change>`. To check for schema drift, set `SHADOW_DATABASE_URL` to an empty PostgreSQL database and run `sh scripts/check-migrations.sh`.
+Generate all four clients with `npm run prisma:generate`; deploy all four migration sets with `npm run prisma:deploy`.
+
+Each module has migrations under `prisma/<module>/migrations/`; use `npm run prisma:deploy` to apply them. To check for schema drift, set `SHADOW_DATABASE_URL` to an empty PostgreSQL database and run `sh scripts/check-migrations.sh`.
 
 ## Seed accounts
 
@@ -87,7 +91,7 @@ Product records do not contain stock. Products and Orders use only `INVENTORY_PO
 | GET | `/notifications` | Any authenticated | Own notifications, newest first |
 | PATCH | `/notifications/:id/read`, `/notifications/read-all` | Any authenticated | Mark own notification(s) read |
 
-Allowed order transitions: PENDING→CONFIRMED→SHIPPED→DELIVERED, with cancellation allowed from PENDING or CONFIRMED. Invalid or concurrent transitions return `409 INVALID_STATUS_TRANSITION`. The database conditionally applies each transition; cancellation releases stock after commit, so concurrent cancellation can release a reservation only once. Reservations use order IDs as idempotency references; a repeated reserve does not decrement stock twice, and a repeated or unknown release does not add stock.
+Allowed order transitions: PENDING→CONFIRMED, PENDING→CANCELLED, and CONFIRMED→CANCELLED. Cancellation is final; owners or admins can cancel through `/orders/:id/cancel`. Invalid or concurrent transitions return `409 INVALID_STATUS_TRANSITION`. The database conditionally applies each transition; cancellation releases stock after commit, so concurrent cancellation can release a reservation only once. Reservations use order IDs as idempotency references; a repeated reserve does not decrement stock twice, and a repeated or unknown release does not add stock.
 
 ## Tests and demo
 

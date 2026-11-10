@@ -5,7 +5,9 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { UsersPrismaService } from './prisma/users-prisma.service';
+import { OrdersApi } from '../orders/api/orders.api';
+import { NotificationsApi } from '../notifications/api/notifications.api';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
@@ -15,7 +17,11 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: UsersPrismaService,
+    private readonly orders: OrdersApi,
+    private readonly notifications: NotificationsApi,
+  ) {}
 
   /**
    * Create a new user
@@ -186,9 +192,12 @@ export class UsersService {
     // Check if user exists
     await this.findOne(id);
 
+    if (await this.orders.userHasOrders(id)) throw new ConflictException('User has orders; deactivate the account instead');
+
     await this.prisma.user.delete({
       where: { id },
     });
+    try { await this.notifications.deleteAllForUser(id); } catch (error) { this.logger.error(`Failed to delete notifications for user ${id}`, error instanceof Error ? error.stack : undefined); }
 
     this.logger.log(`User deleted: ${id}`);
     return { message: 'User deleted successfully' };

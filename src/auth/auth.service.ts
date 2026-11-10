@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UsersService } from '../users/users.service';
+import { UsersApi } from '../users/api/users.api';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
@@ -17,7 +17,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private readonly usersService: UsersService,
+    private readonly usersService: UsersApi,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -55,10 +55,7 @@ export class AuthService {
     const { identifier, password } = loginDto;
 
     // Find user by email or username
-    let user = await this.usersService.findByEmail(identifier);
-    if (!user) {
-      user = await this.usersService.findByUsername(identifier);
-    }
+    const user = await this.usersService.findAuthRecord(identifier);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -80,10 +77,10 @@ export class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
       // Increment login attempts
-      await this.usersService.incrementLoginAttempts(user.id);
+      await this.usersService.recordLoginFailure(user.id);
 
       const maxAttempts =
         this.configService.get<number>('ACCOUNT_LOCKOUT_ATTEMPTS', 5);
@@ -101,14 +98,13 @@ export class AuthService {
     }
 
     // Reset login attempts on successful login
-    await this.usersService.resetLoginAttempts(user.id);
+    await this.usersService.recordLoginSuccess(user.id);
 
     // Generate JWT token
     const accessToken = this.generateToken(user.id, user.email, user.role);
 
     // Return user without password
-    const { password: _, loginAttempts: __, lockUntil: ___, ...userResponse } =
-      user;
+    const { passwordHash: _, loginAttempts: __, ...userResponse } = user;
 
     this.logger.log(`User logged in: ${user.email}`);
 

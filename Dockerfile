@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 FROM dependencies AS builder
 COPY . .
-RUN npx prisma generate \
+RUN npm run prisma:generate \
  && rm -rf dist *.tsbuildinfo \
  && npm run build \
  && test -f dist/main.js
@@ -45,6 +45,6 @@ RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
  && chown node:node /app/docker-entrypoint.sh \
  && mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
-RUN npx prisma generate
+RUN npm run prisma:generate
 EXPOSE 3000
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

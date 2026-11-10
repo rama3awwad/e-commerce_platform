@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { INVENTORY_PORT, InventoryPort } from '../inventory/inventory.port';
+import { ProductsPrismaService } from './prisma/products-prisma.service';
+import { INVENTORY_PORT, InventoryPort } from '../inventory/api/inventory.port';
 import { CreateProductDto, ProductQueryDto, UpdateProductDto } from './dto/product.dto';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CodedException } from '../common/exceptions/coded.exception';
@@ -8,7 +8,7 @@ import { CodedException } from '../common/exceptions/coded.exception';
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
-  constructor(private readonly prisma: PrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort) {}
+  constructor(private readonly prisma: ProductsPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort) {}
 
   async listCategories() { return this.prisma.category.findMany({ orderBy: { name: 'asc' } }); }
   createCategory(dto: CreateCategoryDto) { return this.prisma.category.create({ data: dto }); }
@@ -48,9 +48,7 @@ export class ProductsService {
   async setStock(id: string, quantity: number) { await this.findOne(id); try { await this.inventory.setStock(id, quantity); } catch { throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable'); } return this.findOne(id); }
   async remove(id: string) {
     const product = await this.prisma.product.findUnique({ where: { id } }); if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found' });
-    const used = await this.prisma.orderItem.count({ where: { productId: id } });
-    if (used) return this.prisma.product.update({ where: { id }, data: { isActive: false } });
-    return this.prisma.product.delete({ where: { id } });
+    return this.prisma.product.update({ where: { id }, data: { isActive: false } });
   }
   private async stock(id: string) { try { return await this.inventory.getStock(id); } catch { throw new CodedException(503, 'INVENTORY_UNAVAILABLE', 'Inventory service is temporarily unavailable'); } }
 }
