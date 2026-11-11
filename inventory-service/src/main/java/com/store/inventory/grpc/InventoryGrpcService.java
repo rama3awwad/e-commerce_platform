@@ -72,6 +72,22 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
     }
 
     @Override
+    public void setStocks(SetStocksRequest request,
+                         StreamObserver<SetStocksResponse> responseObserver) {
+        try {
+            int updatedCount = service.setStocks(request.getProductIdsList(), request.getQuantity());
+            responseObserver.onNext(SetStocksResponse.newBuilder()
+                    .setUpdatedCount(updatedCount)
+                    .build());
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException e) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+        }
+    }
+
+    @Override
     public void reserveStock(ReserveStockRequest request,
                              StreamObserver<ReserveStockResponse> responseObserver) {
 

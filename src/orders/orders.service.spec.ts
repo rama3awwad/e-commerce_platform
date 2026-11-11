@@ -22,6 +22,34 @@ describe('OrdersService compensation', () => {
   });
 });
 
+describe('OrdersService read routing', () => {
+  it('uses the read client for order listings', async () => {
+    const replica = {
+      order: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    const primaryMock = {
+      order: { findMany: jest.fn(), count: jest.fn() },
+      readClient: replica,
+    };
+    const primary = primaryMock as unknown as OrdersPrismaService;
+    const service = new OrdersService(
+      primary,
+      {} as InventoryPort,
+      {} as ProductsApi,
+      {} as NotificationsApi,
+    );
+
+    await service.list({ id: 'u1', role: Role.CUSTOMER }, {});
+
+    expect(replica.order.findMany).toHaveBeenCalledTimes(1);
+    expect(replica.order.count).toHaveBeenCalledTimes(1);
+    expect(primaryMock.order.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrdersService status changes', () => {
   const order = { id: 'o1', userId: 'u1', orderNumber: 42, status: OrderStatus.CONFIRMED, items: [{ id: 'i1', productId: 'p1', quantity: 3 }] };
   const setup = (updateCount = 1, release = jest.fn().mockResolvedValue(undefined)) => {

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '.prisma/orders-client';
+import { OrderStatus, Prisma, PrismaClient } from '.prisma/orders-client';
 import { Role } from '../common/enums/role.enum';
 import { OrdersPrismaService } from './prisma/orders-prisma.service';
 import { INVENTORY_PORT, InventoryPort } from '../inventory/api/inventory.port';
@@ -43,11 +43,12 @@ export class OrdersService {
   async list(user: { id: string; role: Role }, query: OrderQueryDto) {
     const where: Prisma.OrderWhereInput = { ...(user.role === Role.ADMIN ? (query.userId ? { userId: query.userId } : {}) : { userId: user.id }), ...(query.status ? { status: query.status } : {}) };
     const { page = 1, limit = 10 } = query;
-    const [items, total] = await Promise.all([this.prisma.order.findMany({ where, include: { items: true }, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }), this.prisma.order.count({ where })]);
+    const reader: PrismaClient = this.prisma.readClient;
+    const [items, total] = await Promise.all([reader.order.findMany({ where, include: { items: true }, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }), reader.order.count({ where })]);
     const totalPages = Math.ceil(total / limit); return { items, meta: { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
   }
   async findOne(id: string, requester: { id: string; role: Role }) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
+    const order = await this.prisma.readClient.order.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Order not found' });
     if (requester.role !== Role.ADMIN && order.userId !== requester.id) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'You cannot access this order' });
     return order;

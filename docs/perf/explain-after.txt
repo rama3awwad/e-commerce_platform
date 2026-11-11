@@ -1,0 +1,28 @@
+﻿SET
+                                                                                    QUERY PLAN                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=68.15..478.62 rows=73 width=121) (actual time=0.157..0.712 rows=20 loops=1)
+   Output: i.id, i."orderId", i."productId", i.quantity, i."unitPrice"
+   Buffers: shared hit=57 read=33
+   ->  HashAggregate  (cost=67.72..67.92 rows=20 width=37) (actual time=0.121..0.128 rows=20 loops=1)
+         Output: o.id
+         Group Key: o.id
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=10
+         ->  Limit  (cost=0.42..67.47 rows=20 width=45) (actual time=0.054..0.110 rows=20 loops=1)
+               Output: o.id, o."createdAt"
+               Buffers: shared hit=10
+               ->  Index Scan Backward using "orders_userId_createdAt_idx" on orders.orders o  (cost=0.42..9166.33 rows=2734 width=45) (actual time=0.053..0.108 rows=20 loops=1)
+                     Output: o.id, o."createdAt"
+                     Index Cond: (o."userId" = 'bfe1c949-8708-481e-99ef-e23254ba073a'::text)
+                     Buffers: shared hit=10
+   ->  Index Scan using "order_items_orderId_idx" on orders.order_items i  (cost=0.42..20.49 rows=4 width=121) (actual time=0.028..0.028 rows=1 loops=20)
+         Output: i.id, i."orderId", i."productId", i.quantity, i."unitPrice"
+         Index Cond: (i."orderId" = o.id)
+         Buffers: shared hit=47 read=33
+ Planning:
+   Buffers: shared hit=362 read=6
+ Planning Time: 3.044 ms
+ Execution Time: 0.796 ms
+(23 rows)
+

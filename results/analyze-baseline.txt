@@ -1,0 +1,154 @@
+﻿INFO:  "_prisma_migrations": scanned 1 of 1 pages, containing 1 live rows and 2 dead rows; 1 rows in sample, 1 
+INFO:  analyzing "users.users"
+INFO:  "users": scanned 144 of 144 pages, containing 5004 live rows and 4 dead rows; 5004 rows in sample, 5004 
+INFO:  analyzing "pg_catalog.pg_type"
+INFO:  "pg_type": scanned 15 of 15 pages, containing 637 live rows and 0 dead rows; 637 rows in sample, 637 estimated 
+INFO:  analyzing "products._prisma_migrations"
+INFO:  "_prisma_migrations": scanned 1 of 1 pages, containing 1 live rows and 2 dead rows; 1 rows in sample, 1 
+INFO:  analyzing "pg_catalog.pg_foreign_table"
+INFO:  "pg_foreign_table": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_authid"
+INFO:  "pg_authid": scanned 1 of 1 pages, containing 15 live rows and 0 dead rows; 15 rows in sample, 15 estimated 
+INFO:  analyzing "products.categories"
+INFO:  "categories": scanned 1 of 1 pages, containing 8 live rows and 0 dead rows; 8 rows in sample, 8 estimated total 
+INFO:  analyzing "products.products"
+INFO:  "products": scanned 528 of 528 pages, containing 20025 live rows and 0 dead rows; 20025 rows in sample, 20025 
+INFO:  analyzing "orders._prisma_migrations"
+INFO:  "_prisma_migrations": scanned 1 of 1 pages, containing 1 live rows and 2 dead rows; 1 rows in sample, 1 
+INFO:  analyzing "pg_catalog.pg_statistic_ext_data"
+INFO:  "pg_statistic_ext_data": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "orders.orders"
+INFO:  "orders": scanned 6204 of 6204 pages, containing 300000 live rows and 60000 dead rows; 30000 rows in sample, 
+INFO:  analyzing "orders.order_items"
+INFO:  "order_items": scanned 17308 of 17308 pages, containing 900000 live rows and 0 dead rows; 30000 rows in sample, 
+INFO:  analyzing "notifications._prisma_migrations"
+INFO:  "_prisma_migrations": scanned 1 of 1 pages, containing 1 live rows and 2 dead rows; 1 rows in sample, 1 
+INFO:  analyzing "notifications.notifications"
+INFO:  "notifications": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_user_mapping"
+INFO:  "pg_user_mapping": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_subscription"
+INFO:  "pg_subscription": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_attribute"
+INFO:  "pg_attribute": scanned 62 of 62 pages, containing 3390 live rows and 2 dead rows; 3390 rows in sample, 3390 
+INFO:  analyzing "pg_catalog.pg_proc"
+INFO:  "pg_proc": scanned 98 of 98 pages, containing 3297 live rows and 0 dead rows; 3297 rows in sample, 3297 
+INFO:  analyzing "pg_catalog.pg_class"
+INFO:  "pg_class": scanned 14 of 14 pages, containing 465 live rows and 11 dead rows; 465 rows in sample, 465 
+INFO:  analyzing "pg_catalog.pg_attrdef"
+INFO:  "pg_attrdef": scanned 1 of 1 pages, containing 20 live rows and 0 dead rows; 20 rows in sample, 20 estimated 
+INFO:  analyzing "pg_catalog.pg_constraint"
+INFO:  "pg_constraint": scanned 3 of 3 pages, containing 124 live rows and 0 dead rows; 124 rows in sample, 124 
+INFO:  analyzing "pg_catalog.pg_inherits"
+INFO:  "pg_inherits": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_index"
+INFO:  "pg_index": scanned 5 of 5 pages, containing 195 live rows and 0 dead rows; 195 rows in sample, 195 estimated 
+INFO:  analyzing "pg_catalog.pg_operator"
+INFO:  "pg_operator": scanned 14 of 14 pages, containing 799 live rows and 0 dead rows; 799 rows in sample, 799 
+INFO:  analyzing "pg_catalog.pg_opfamily"
+INFO:  "pg_opfamily": scanned 2 of 2 pages, containing 146 live rows and 0 dead rows; 146 rows in sample, 146 
+INFO:  analyzing "pg_catalog.pg_opclass"
+INFO:  "pg_opclass": scanned 3 of 3 pages, containing 177 live rows and 0 dead rows; 177 rows in sample, 177 estimated 
+INFO:  analyzing "pg_catalog.pg_am"
+INFO:  "pg_am": scanned 1 of 1 pages, containing 7 live rows and 0 dead rows; 7 rows in sample, 7 estimated total rows
+INFO:  analyzing "pg_catalog.pg_amop"
+INFO:  "pg_amop": scanned 7 of 7 pages, containing 945 live rows and 0 dead rows; 945 rows in sample, 945 estimated 
+INFO:  analyzing "pg_catalog.pg_amproc"
+INFO:  "pg_amproc": scanned 5 of 5 pages, containing 696 live rows and 0 dead rows; 696 rows in sample, 696 estimated 
+INFO:  analyzing "pg_catalog.pg_language"
+INFO:  "pg_language": scanned 1 of 1 pages, containing 4 live rows and 0 dead rows; 4 rows in sample, 4 estimated 
+INFO:  analyzing "pg_catalog.pg_largeobject_metadata"
+INFO:  "pg_largeobject_metadata": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_aggregate"
+INFO:  "pg_aggregate": scanned 2 of 2 pages, containing 157 live rows and 0 dead rows; 157 rows in sample, 157 
+INFO:  analyzing "pg_catalog.pg_statistic_ext"
+INFO:  "pg_statistic_ext": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_rewrite"
+INFO:  "pg_rewrite": scanned 13 of 13 pages, containing 143 live rows and 0 dead rows; 143 rows in sample, 143 
+INFO:  analyzing "pg_catalog.pg_trigger"
+INFO:  "pg_trigger": scanned 1 of 1 pages, containing 8 live rows and 0 dead rows; 8 rows in sample, 8 estimated total 
+INFO:  analyzing "pg_catalog.pg_event_trigger"
+INFO:  "pg_event_trigger": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_description"
+INFO:  "pg_description": scanned 45 of 45 pages, containing 5287 live rows and 0 dead rows; 5287 rows in sample, 5287 
+INFO:  analyzing "pg_catalog.pg_cast"
+INFO:  "pg_cast": scanned 2 of 2 pages, containing 229 live rows and 0 dead rows; 229 rows in sample, 229 estimated 
+INFO:  analyzing "pg_catalog.pg_enum"
+INFO:  "pg_enum": scanned 1 of 1 pages, containing 5 live rows and 0 dead rows; 5 rows in sample, 5 estimated total 
+INFO:  analyzing "pg_catalog.pg_namespace"
+INFO:  "pg_namespace": scanned 1 of 1 pages, containing 8 live rows and 0 dead rows; 8 rows in sample, 8 estimated 
+INFO:  analyzing "pg_catalog.pg_conversion"
+INFO:  "pg_conversion": scanned 2 of 2 pages, containing 128 live rows and 0 dead rows; 128 rows in sample, 128 
+INFO:  analyzing "pg_catalog.pg_depend"
+INFO:  "pg_depend": scanned 14 of 14 pages, containing 1843 live rows and 0 dead rows; 1843 rows in sample, 1843 
+INFO:  analyzing "pg_catalog.pg_database"
+INFO:  "pg_database": scanned 1 of 1 pages, containing 4 live rows and 0 dead rows; 4 rows in sample, 4 estimated 
+INFO:  analyzing "pg_catalog.pg_db_role_setting"
+INFO:  "pg_db_role_setting": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_tablespace"
+INFO:  "pg_tablespace": scanned 1 of 1 pages, containing 2 live rows and 0 dead rows; 2 rows in sample, 2 estimated 
+INFO:  analyzing "pg_catalog.pg_auth_members"
+INFO:  "pg_auth_members": scanned 1 of 1 pages, containing 3 live rows and 0 dead rows; 3 rows in sample, 3 estimated 
+INFO:  analyzing "pg_catalog.pg_shdepend"
+INFO:  "pg_shdepend": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_shdescription"
+INFO:  "pg_shdescription": scanned 1 of 1 pages, containing 3 live rows and 0 dead rows; 3 rows in sample, 3 estimated 
+INFO:  analyzing "pg_catalog.pg_ts_config"
+INFO:  "pg_ts_config": scanned 1 of 1 pages, containing 29 live rows and 0 dead rows; 29 rows in sample, 29 estimated 
+INFO:  analyzing "pg_catalog.pg_ts_config_map"
+INFO:  "pg_ts_config_map": scanned 3 of 3 pages, containing 551 live rows and 0 dead rows; 551 rows in sample, 551 
+INFO:  analyzing "pg_catalog.pg_ts_dict"
+INFO:  "pg_ts_dict": scanned 1 of 1 pages, containing 29 live rows and 0 dead rows; 29 rows in sample, 29 estimated 
+INFO:  analyzing "pg_catalog.pg_ts_parser"
+INFO:  "pg_ts_parser": scanned 1 of 1 pages, containing 1 live rows and 0 dead rows; 1 rows in sample, 1 estimated 
+INFO:  analyzing "pg_catalog.pg_ts_template"
+INFO:  "pg_ts_template": scanned 1 of 1 pages, containing 5 live rows and 0 dead rows; 5 rows in sample, 5 estimated 
+INFO:  analyzing "pg_catalog.pg_extension"
+INFO:  "pg_extension": scanned 1 of 1 pages, containing 1 live rows and 0 dead rows; 1 rows in sample, 1 estimated 
+INFO:  analyzing "pg_catalog.pg_foreign_data_wrapper"
+INFO:  "pg_foreign_data_wrapper": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_foreign_server"
+INFO:  "pg_foreign_server": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_policy"
+INFO:  "pg_policy": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated total 
+INFO:  analyzing "pg_catalog.pg_replication_origin"
+INFO:  "pg_replication_origin": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_default_acl"
+INFO:  "pg_default_acl": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_init_privs"
+INFO:  "pg_init_privs": scanned 3 of 3 pages, containing 220 live rows and 0 dead rows; 220 rows in sample, 220 
+INFO:  analyzing "pg_catalog.pg_seclabel"
+INFO:  "pg_seclabel": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_shseclabel"
+INFO:  "pg_shseclabel": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_collation"
+INFO:  "pg_collation": scanned 16 of 16 pages, containing 912 live rows and 0 dead rows; 912 rows in sample, 912 
+INFO:  analyzing "pg_catalog.pg_parameter_acl"
+INFO:  "pg_parameter_acl": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_partitioned_table"
+INFO:  "pg_partitioned_table": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_range"
+INFO:  "pg_range": scanned 1 of 1 pages, containing 6 live rows and 0 dead rows; 6 rows in sample, 6 estimated total 
+INFO:  analyzing "pg_catalog.pg_transform"
+INFO:  "pg_transform": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_sequence"
+INFO:  "pg_sequence": scanned 1 of 1 pages, containing 1 live rows and 1 dead rows; 1 rows in sample, 1 estimated 
+INFO:  analyzing "pg_catalog.pg_publication"
+INFO:  "pg_publication": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "pg_catalog.pg_publication_namespace"
+INFO:  "pg_publication_namespace": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_publication_rel"
+INFO:  "pg_publication_rel": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_subscription_rel"
+INFO:  "pg_subscription_rel": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 
+INFO:  analyzing "pg_catalog.pg_largeobject"
+INFO:  "pg_largeobject": scanned 0 of 0 pages, containing 0 live rows and 0 dead rows; 0 rows in sample, 0 estimated 
+INFO:  analyzing "information_schema.sql_features"
+INFO:  "sql_features": scanned 8 of 8 pages, containing 755 live rows and 0 dead rows; 755 rows in sample, 755 
+INFO:  analyzing "information_schema.sql_implementation_info"
+INFO:  "sql_implementation_info": scanned 1 of 1 pages, containing 12 live rows and 0 dead rows; 12 rows in sample, 12 
+INFO:  analyzing "information_schema.sql_parts"
+INFO:  "sql_parts": scanned 1 of 1 pages, containing 11 live rows and 0 dead rows; 11 rows in sample, 11 estimated 
+INFO:  analyzing "information_schema.sql_sizing"
+INFO:  "sql_sizing": scanned 1 of 1 pages, containing 23 live rows and 0 dead rows; 23 rows in sample, 23 estimated 
+ANALYZE

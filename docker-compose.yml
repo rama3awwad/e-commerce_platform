@@ -117,6 +117,31 @@ services:
       inventory-service:
         condition: service_healthy
 
+  perf-seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    profiles: ["perf"]
+    command: ["npm", "run", "seed:perf"]
+    environment:
+      USERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=users&connection_limit=5"
+      PRODUCTS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
+      ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
+      INVENTORY_GRPC_URL: "inventory-service:9090"
+      PERF_USER_PASSWORD: ${PERF_USER_PASSWORD:-Perf@12345}
+      PERF_USERS: ${PERF_USERS:-5000}
+      PERF_PRODUCTS: ${PERF_PRODUCTS:-20000}
+      PERF_ORDERS: ${PERF_ORDERS:-300000}
+      PERF_HEAVY_USERS: ${PERF_HEAVY_USERS:-20}
+    volumes:
+      - ./results:/app/results
+    depends_on:
+      db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   inventory_data:

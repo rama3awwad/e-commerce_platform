@@ -1,0 +1,137 @@
+{
+  "startedAt": "2026-11-11T10:37:57.852Z",
+  "durationSeconds": 670.48,
+  "configuration": {
+    "users": 5000,
+    "products": 20000,
+    "orders": 300000,
+    "heavyUsers": 20
+  },
+  "performanceRows": {
+    "users": 5000,
+    "products": 20000,
+    "orders": 300000,
+    "orderItems": 900000,
+    "orderItemsGenerated": 900000,
+    "inventoryStocksInitialized": 20000,
+    "ordersAssignedToHeavyUsers": 60000
+  },
+  "k6LoginEmails": [
+    "perf-user-00001@perf.local",
+    "perf-user-00002@perf.local",
+    "perf-user-00003@perf.local",
+    "perf-user-00004@perf.local",
+    "perf-user-00005@perf.local",
+    "perf-user-00006@perf.local",
+    "perf-user-00007@perf.local",
+    "perf-user-00008@perf.local",
+    "perf-user-00009@perf.local",
+    "perf-user-00010@perf.local",
+    "perf-user-00011@perf.local",
+    "perf-user-00012@perf.local",
+    "perf-user-00013@perf.local",
+    "perf-user-00014@perf.local",
+    "perf-user-00015@perf.local",
+    "perf-user-00016@perf.local",
+    "perf-user-00017@perf.local",
+    "perf-user-00018@perf.local",
+    "perf-user-00019@perf.local",
+    "perf-user-00020@perf.local",
+    "perf-user-00021@perf.local",
+    "perf-user-00022@perf.local",
+    "perf-user-00023@perf.local",
+    "perf-user-00024@perf.local",
+    "perf-user-00025@perf.local",
+    "perf-user-00026@perf.local",
+    "perf-user-00027@perf.local",
+    "perf-user-00028@perf.local",
+    "perf-user-00029@perf.local",
+    "perf-user-00030@perf.local",
+    "perf-user-00031@perf.local",
+    "perf-user-00032@perf.local",
+    "perf-user-00033@perf.local",
+    "perf-user-00034@perf.local",
+    "perf-user-00035@perf.local",
+    "perf-user-00036@perf.local",
+    "perf-user-00037@perf.local",
+    "perf-user-00038@perf.local",
+    "perf-user-00039@perf.local",
+    "perf-user-00040@perf.local",
+    "perf-user-00041@perf.local",
+    "perf-user-00042@perf.local",
+    "perf-user-00043@perf.local",
+    "perf-user-00044@perf.local",
+    "perf-user-00045@perf.local",
+    "perf-user-00046@perf.local",
+    "perf-user-00047@perf.local",
+    "perf-user-00048@perf.local",
+    "perf-user-00049@perf.local",
+    "perf-user-00050@perf.local"
+  ],
+  "tableSizes": [
+    {
+      "schema": "orders",
+      "table": "order_items",
+      "totalBytes": 221888512,
+      "indexBytes": 80027648,
+      "totalSize": "212 MB",
+      "indexSize": "76 MB"
+    },
+    {
+      "schema": "orders",
+      "table": "orders",
+      "totalBytes": 126910464,
+      "indexBytes": 76038144,
+      "totalSize": "121 MB",
+      "indexSize": "73 MB"
+    },
+    {
+      "schema": "products",
+      "table": "products",
+      "totalBytes": 7282688,
+      "indexBytes": 2916352,
+      "totalSize": "7112 kB",
+      "indexSize": "2848 kB"
+    },
+    {
+      "schema": "users",
+      "table": "users",
+      "totalBytes": 2015232,
+      "indexBytes": 802816,
+      "totalSize": "1968 kB",
+      "indexSize": "784 kB"
+    },
+    {
+      "schema": "products",
+      "table": "categories",
+      "totalBytes": 65536,
+      "indexBytes": 49152,
+      "totalSize": "64 kB",
+      "indexSize": "48 kB"
+    },
+    {
+      "schema": "products",
+      "table": "_prisma_migrations",
+      "totalBytes": 32768,
+      "indexBytes": 16384,
+      "totalSize": "32 kB",
+      "indexSize": "16 kB"
+    },
+    {
+      "schema": "orders",
+      "table": "_prisma_migrations",
+      "totalBytes": 32768,
+      "indexBytes": 16384,
+      "totalSize": "32 kB",
+      "indexSize": "16 kB"
+    },
+    {
+      "schema": "users",
+      "table": "_prisma_migrations",
+      "totalBytes": 32768,
+      "indexBytes": 16384,
+      "totalSize": "32 kB",
+      "indexSize": "16 kB"
+    }
+  ]
+}

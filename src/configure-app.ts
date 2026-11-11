@@ -11,9 +11,11 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { requestQueryCounter } from './common/perf/request-query-counter';
 
 
 export function configureApp(app: INestApplication) {
+  app.use(requestQueryCounter.middleware);
   app.use(helmet());
   app.enableCors({ origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((x) => x.trim()), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
