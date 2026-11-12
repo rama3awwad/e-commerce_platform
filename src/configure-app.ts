@@ -11,16 +11,21 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import { requestQueryCounter } from './common/perf/request-query-counter';
+import { EtagInterceptor } from './common/interceptors/etag.interceptor';
+import { responseHeadersMiddleware } from './common/perf/response-headers';
 
 
 export function configureApp(app: INestApplication) {
-  app.use(requestQueryCounter.middleware);
+  // المتطلب الثالث: headers تشخيصية (X-Cache, X-Read-Source) + ETag.
+  // نعطل ETag الافتراضي في Express ونحسب بصمتنا على data فقط (انظر EtagInterceptor).
+  app.use(responseHeadersMiddleware);
+  (app.getHttpAdapter().getInstance() as express.Express).set('etag', false);
   app.use(helmet());
-  app.enableCors({ origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((x) => x.trim()), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], credentials: true });
+  app.enableCors({ origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((x) => x.trim()), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'If-None-Match'], exposedHeaders: ['ETag', 'X-Cache', 'X-Read-Source'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+  // الترتيب مهم: EtagInterceptor داخلي فيرى data قبل أن يغلفها TransformInterceptor بـtimestamp.
+  app.useGlobalInterceptors(new TransformInterceptor(), new EtagInterceptor());
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.setGlobalPrefix('api');
 

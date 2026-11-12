@@ -6,6 +6,9 @@ import { InventoryPort } from '../inventory/api/inventory.port';
 import { OrderStatus } from '.prisma/orders-client';
 import { Role } from '../common/enums/role.enum';
 import { Logger } from '@nestjs/common';
+import { RecentWritesService } from '../common/cache/recent-writes.service';
+
+const noRecentWrites = { mark: async () => undefined, isRecent: async () => false } as unknown as RecentWritesService;
 
 describe('OrdersService compensation', () => {
   it('releases a successful reservation if the database transaction fails', async () => {
@@ -15,7 +18,7 @@ describe('OrdersService compensation', () => {
     const inventory = { reserve, release } as unknown as InventoryPort;
     const notifications = { notify: jest.fn() } as unknown as NotificationsApi;
     const products = { findActiveByIds: jest.fn().mockResolvedValue([{ id: 'p1', name: 'P', price: '1.00' }]) } as unknown as ProductsApi;
-    const service = new OrdersService(prisma, inventory, products, notifications);
+    const service = new OrdersService(prisma, inventory, products, notifications, noRecentWrites);
     await expect(service.create('u1', { items: [{ productId: 'p1', quantity: 2 }] })).rejects.toThrow('database failed');
     expect(reserve).toHaveBeenCalledWith(expect.any(String), [{ productId: 'p1', quantity: 2 }]);
     expect(release).toHaveBeenCalledWith(reserve.mock.calls[0][0], [{ productId: 'p1', quantity: 2 }]);
@@ -32,7 +35,7 @@ describe('OrdersService read routing', () => {
     };
     const primaryMock = {
       order: { findMany: jest.fn(), count: jest.fn() },
-      readClient: replica,
+      readClient: replica, hasReplica: true,
     };
     const primary = primaryMock as unknown as OrdersPrismaService;
     const service = new OrdersService(
@@ -40,6 +43,7 @@ describe('OrdersService read routing', () => {
       {} as InventoryPort,
       {} as ProductsApi,
       {} as NotificationsApi,
+      noRecentWrites,
     );
 
     await service.list({ id: 'u1', role: Role.CUSTOMER }, {});
@@ -47,6 +51,19 @@ describe('OrdersService read routing', () => {
     expect(replica.order.findMany).toHaveBeenCalledTimes(1);
     expect(replica.order.count).toHaveBeenCalledTimes(1);
     expect(primaryMock.order.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reads from the primary right after the same user wrote (read-your-writes)', async () => {
+    const replica = { order: { findMany: jest.fn(), count: jest.fn() } };
+    const primaryMock = { order: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) }, readClient: replica, hasReplica: true };
+    const recent = { isRecent: jest.fn().mockResolvedValue(true) } as unknown as RecentWritesService;
+    const service = new OrdersService(primaryMock as unknown as OrdersPrismaService, {} as InventoryPort, {} as ProductsApi, {} as NotificationsApi, recent);
+
+    await service.list({ id: 'u1', role: Role.CUSTOMER }, {});
+
+    expect((recent as any).isRecent).toHaveBeenCalledWith('orders:user:u1');
+    expect(primaryMock.order.findMany).toHaveBeenCalledTimes(1);
+    expect(replica.order.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -63,7 +80,7 @@ describe('OrdersService status changes', () => {
     const inventory = { release } as unknown as InventoryPort;
     const notifications = { notify: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsApi;
     const products = { findActiveByIds: jest.fn() } as unknown as ProductsApi;
-    return { service: new OrdersService(prisma, inventory, products, notifications), tx, release };
+    return { service: new OrdersService(prisma, inventory, products, notifications, noRecentWrites), tx, release };
   };
 
   it('rejects a stale status update and does not release stock', async () => {

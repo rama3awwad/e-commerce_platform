@@ -33,5 +33,7 @@ model Product {
 
   @@index([categoryId])
   @@index([name])
+  // Requirement 3: trigram index so search with ILIKE '%term%' can use an index
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_name_trgm_idx")
   @@map("products")
 }

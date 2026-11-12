@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -54,6 +55,22 @@ public class InventoryService {
         return stockRepo.findByProductId(productId)
                 .map(StockItem::getQuantity)
                 .orElse(0);
+    }
+
+    /**
+     * المتطلب الثالث (N+1): قراءة كميات عدة منتجات باستعلام SQL واحد
+     * (SELECT ... WHERE product_id IN (...)) بدل استعلام لكل منتج.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Integer> getStocks(List<String> productIds) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        if (productIds.isEmpty()) {
+            return result;
+        }
+        productIds.forEach(id -> result.put(id, 0));
+        stockRepo.findAllById(productIds)
+                .forEach(item -> result.put(item.getProductId(), item.getQuantity()));
+        return result;
     }
 
     // ====================================================================

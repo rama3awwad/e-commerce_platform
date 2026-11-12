@@ -1,25 +1,24 @@
 #!/bin/sh
+# Requirement 3 — Read Replica.
+# First start: clone the primary with pg_basebackup (-R writes the standby config so it keeps
+# streaming WAL from the primary). Every start: run PostgreSQL as a read-only hot standby.
 set -eu
 
-: "${PGDATA:?PGDATA is required}"
-: "${PRIMARY_HOST:?PRIMARY_HOST is required}"
-: "${PRIMARY_PORT:?PRIMARY_PORT is required}"
-: "${REPLICATION_USER:?REPLICATION_USER is required}"
-: "${PERF_REPLICATION_PASSWORD:?PERF_REPLICATION_PASSWORD is required}"
-
-escaped_password=$(printf '%s' "$PERF_REPLICATION_PASSWORD" | sed 's/\\/\\\\/g; s/:/\\:/g')
-printf '%s:%s:*:%s:%s\n' "$PRIMARY_HOST" "$PRIMARY_PORT" "$REPLICATION_USER" "$escaped_password" > /tmp/replica.pgpass
-chmod 0600 /tmp/replica.pgpass
+: "${PGDATA:?}" "${PRIMARY_HOST:?}" "${POSTGRES_USER:?}" "${POSTGRES_PASSWORD:?}"
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
-  mkdir -p "$PGDATA"
-  if [ -n "$(find "$PGDATA" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-    echo "Replica data directory is not empty and has no PG_VERSION; refusing to overwrite it." >&2
-    exit 1
-  fi
+  echo "[replica] waiting for primary $PRIMARY_HOST ..."
+  until pg_isready -h "$PRIMARY_HOST" -p 5432 -U "$POSTGRES_USER" >/dev/null 2>&1; do sleep 1; done
 
-  connection="host=$PRIMARY_HOST port=$PRIMARY_PORT user=$REPLICATION_USER application_name=perf-read-replica passfile=/tmp/replica.pgpass"
-  pg_basebackup --dbname="$connection" --pgdata="$PGDATA" --format=plain --wal-method=stream --write-recovery-conf --progress
+  echo "[replica] cloning primary (pg_basebackup) ..."
+  mkdir -p "$PGDATA"
+  chown -R postgres:postgres "$PGDATA"
+  chmod 700 "$PGDATA"
+  su-exec postgres env PGPASSWORD="$POSTGRES_PASSWORD" \
+    pg_basebackup -h "$PRIMARY_HOST" -p 5432 -U "$POSTGRES_USER" -D "$PGDATA" -Fp -Xs -R -P
+  echo "[replica] clone finished"
 fi
 
-exec postgres -D "$PGDATA" -c hot_standby=on
+chown -R postgres:postgres "$PGDATA"
+chmod 700 "$PGDATA"
+exec su-exec postgres postgres -D "$PGDATA" -c hot_standby=on

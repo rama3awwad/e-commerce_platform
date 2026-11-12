@@ -1,13 +1,20 @@
 import http from 'k6/http';
-import { check } from 'k6';
+import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000/api/v1';
 const PASSWORD = __ENV.PERF_USER_PASSWORD || 'Perf@12345';
 const warmup = __ENV.K6_WARMUP === 'true';
-const queryCountRun = __ENV.K6_QUERY_COUNT === 'true';
+// K6_PROFILE=quick: نسخة قصيرة (~1 دقيقة) للعرض أمام المعيدة. full: ~4 دقائق للأرقام النهائية.
+const quick = __ENV.K6_PROFILE === 'quick';
 const stageDurations = warmup
   ? [{ duration: '30s', target: 1 }]
+  : quick
+  ? [
+      { duration: '10s', target: 50 },
+      { duration: '40s', target: 100 },
+      { duration: '10s', target: 0 },
+    ]
   : [
       { duration: '15s', target: 10 },
       { duration: '1m', target: 10 },
@@ -57,22 +64,12 @@ function endpointScenario(endpoint, vus) {
   };
 }
 
-const scenarios = queryCountRun
-  ? {
-      queryCounts: {
-        executor: 'constant-vus',
-        exec: 'queryCounts',
-        vus: 1,
-        duration: '1m',
-        gracefulStop: '10s',
-      },
-    }
-  : {
-      products: endpointScenario('products', endpointProfiles.products.vus[2]),
-      productDetail: endpointScenario('productDetail', endpointProfiles.productDetail.vus[2]),
-      orders: endpointScenario('orders', endpointProfiles.orders.vus[2]),
-      createOrder: endpointScenario('createOrder', endpointProfiles.createOrder.vus[2]),
-    };
+const scenarios = {
+  products: endpointScenario('products', endpointProfiles.products.vus[2]),
+  productDetail: endpointScenario('productDetail', endpointProfiles.productDetail.vus[2]),
+  orders: endpointScenario('orders', endpointProfiles.orders.vus[2]),
+  createOrder: endpointScenario('createOrder', endpointProfiles.createOrder.vus[2]),
+};
 
 export const options = {
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
@@ -108,15 +105,26 @@ function record(response, endpointMetrics, endpoint, expectedStatuses) {
   check(response, { [`${endpoint} returned expected status`]: () => success });
 }
 
+// التجهيز ليس جزءاً من القياس: إذا كانت خدمة لسا عم تقلع (أول نداء بطيء) نعيد المحاولة بدل ما يفشل الاختبار كله.
+function withRetry(send, ok) {
+  let response;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    response = send();
+    if (ok(response)) return response;
+    sleep(attempt * 2);
+  }
+  return response;
+}
+
 export function setup() {
   const heavyUserCount = Number(__ENV.PERF_HEAVY_USERS || 20);
   function loginUser(index) {
     const identifier = `perf-user-${String(index + 1).padStart(5, '0')}@perf.local`;
-    const response = http.post(
+    const response = withRetry(() => http.post(
       `${BASE_URL}/auth/login`,
       JSON.stringify({ identifier, password: PASSWORD }),
       { headers: { 'Content-Type': 'application/json' }, tags: { setup: 'login' } },
-    );
+    ), (r) => r.status === 200);
     if (response.status !== 200 || !response.json('data.accessToken')) {
       throw new Error(`Load-test setup login failed for ${identifier}: HTTP ${response.status}`);
     }
@@ -125,10 +133,11 @@ export function setup() {
   const users = Array.from({ length: heavyUserCount }, (_, index) => loginUser(index));
   const writeUser = loginUser(heavyUserCount);
 
-  const productResponse = http.get(`${BASE_URL}/products?page=1&limit=1`, {
+  // 100 منتج مختلف حتى يكون الاختبار واقعياً (وليس نفس المنتج دائماً في الكاش).
+  const productResponse = withRetry(() => http.get(`${BASE_URL}/products?page=1&limit=100`, {
     headers: { Authorization: `Bearer ${users[0].token}` },
     tags: { setup: 'products' },
-  });
+  }), (r) => r.status === 200);
   const products = productResponse.json('data.items');
   if (productResponse.status !== 200 || !Array.isArray(products) || products.length === 0) {
     throw new Error(`Load-test setup could not fetch active products: HTTP ${productResponse.status}`);
@@ -149,13 +158,17 @@ export function products(data) {
   record(response, metrics.products, endpointProfiles.products.endpoint, [200]);
 }
 
+// كل VU يتصرف كمتصفح: يحفظ ETag لكل منتج ويرسله في If-None-Match.
+// إذا لم يتغير المنتج يرد الخادم 304 بدون جسم. (إذا كان ETag معطلاً لا يوجد ETag فيبقى الرد 200.)
+const etags = {};
+
 export function productDetail(data) {
   const product = data.products[Math.floor(Math.random() * data.products.length)];
-  const response = http.get(
-    `${BASE_URL}/products/${product.id}`,
-    authHeaders(data.users[__VU % data.users.length].token, endpointProfiles.productDetail.endpoint),
-  );
-  record(response, metrics.productDetail, endpointProfiles.productDetail.endpoint, [200]);
+  const params = authHeaders(data.users[__VU % data.users.length].token, endpointProfiles.productDetail.endpoint);
+  if (etags[product.id]) params.headers['If-None-Match'] = etags[product.id];
+  const response = http.get(`${BASE_URL}/products/${product.id}`, params);
+  if (response.headers.Etag) etags[product.id] = response.headers.Etag;
+  record(response, metrics.productDetail, endpointProfiles.productDetail.endpoint, [200, 304]);
 }
 
 export function orders(data) {
@@ -184,7 +197,3 @@ export function createOrder(data) {
   record(response, metrics.createOrder, endpointProfiles.createOrder.endpoint, [201]);
 }
 
-export function queryCounts(data) {
-  const endpointFunctions = [products, productDetail, orders, createOrder];
-  endpointFunctions[__ITER % endpointFunctions.length](data);
-}

@@ -10,6 +10,7 @@ import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { CacheModule } from './common/cache/cache.module';
 
 @Module({
   imports: [
@@ -40,6 +41,9 @@ import { InventoryModule } from './inventory/inventory.module';
     }),
 
     // ===== Database =====
+
+    // ===== Requirement 3: Redis cache + read-your-writes markers =====
+    CacheModule,
 
     // ===== Features =====
     UsersModule,

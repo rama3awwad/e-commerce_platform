@@ -31,6 +31,7 @@ option java_package = "com.store.inventory.grpc";
 
 service InventoryService {
   rpc GetStock      (GetStockRequest)      returns (GetStockResponse);
+  rpc GetStocks     (GetStocksRequest)     returns (GetStocksResponse);
   rpc SetStock      (SetStockRequest)      returns (SetStockResponse);
   rpc SetStocks     (SetStocksRequest)     returns (SetStocksResponse);
   rpc ReserveStock  (ReserveStockRequest)  returns (ReserveStockResponse);
@@ -53,6 +54,18 @@ message GetStockRequest {
 message GetStockResponse {
   string product_id = 1;
   int32  available  = 2; // الكمية المتوفرة فعلاً (بعد خصم المحجوز)
+}
+
+// ---------- 1-b) GetStocks (المتطلب الثالث: حل مشكلة N+1) ----------
+// بدل نداء GetStock مرة لكل منتج في الصفحة (N نداء + N استعلام SQL)،
+// نرسل كل المعرّفات في نداء واحد وتنفذ الخدمة استعلاماً واحداً: WHERE product_id IN (...)
+
+message GetStocksRequest {
+  repeated string product_ids = 1;
+}
+
+message GetStocksResponse {
+  repeated StockItem items = 1; // المنتج غير الموجود في المخزون يرجع بكمية 0
 }
 
 // ---------- 2) SetStock ----------

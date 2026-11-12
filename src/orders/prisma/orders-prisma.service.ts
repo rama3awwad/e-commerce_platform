@@ -1,77 +1,37 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
-import { Prisma, PrismaClient } from '.prisma/orders-client';
-import { proxyPrismaDelegates, requestQueryCounter } from '../../common/perf/request-query-counter';
+import { PrismaClient } from '.prisma/orders-client';
 
+/**
+ * هذا الكلاس نفسه هو الاتصال بالقاعدة الأساسية (primary) — كل الكتابات تمر منه.
+ * المتطلب الثالث: إذا READ_REPLICA_ENABLED=true نفتح اتصالاً ثانياً بنسخة القراءة،
+ * والخدمات تستخدم readClient للقراءات العادية.
+ */
 @Injectable()
 export class OrdersPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrdersPrismaService.name);
-  private readonly replicaClient: PrismaClient | undefined;
-  private readonly primaryClient: PrismaClient;
+  private readonly replica?: PrismaClient;
 
   constructor() {
     super();
     if (process.env.READ_REPLICA_ENABLED === 'true') {
-      const replicaUrl = process.env.ORDERS_READ_DATABASE_URL;
-      if (!replicaUrl) throw new Error('ORDERS_READ_DATABASE_URL is required when READ_REPLICA_ENABLED=true');
-
-      const replica = new PrismaClient({ datasources: { db: { url: replicaUrl } } });
-      this.replicaClient = process.env.PRISMA_QUERY_COUNT_ENABLED === 'true'
-        ? proxyPrismaDelegates(replica, replica.$extends({
-          query: {
-            $allModels: {
-              async $allOperations({ args, query }) {
-                requestQueryCounter.increment();
-                return query(args);
-              },
-            },
-          },
-        }), ['order', 'orderItem'])
-        : replica;
-    } else {
-      this.replicaClient = undefined;
+      const url = process.env.ORDERS_READ_DATABASE_URL;
+      if (!url) throw new Error('ORDERS_READ_DATABASE_URL is required when READ_REPLICA_ENABLED=true');
+      this.replica = new PrismaClient({ datasources: { db: { url } } });
     }
-
-    if (process.env.PRISMA_QUERY_COUNT_ENABLED === 'true') {
-      const extended = this.$extends({
-        query: {
-          $allModels: {
-            async $allOperations({ args, query }) {
-              requestQueryCounter.increment();
-              return query(args);
-            },
-          },
-        },
-      });
-      this.primaryClient = proxyPrismaDelegates(this, extended, ['order', 'orderItem']);
-      return this.primaryClient;
-    }
-
-    this.primaryClient = this;
   }
 
-  get readClient(): PrismaClient {
-    return this.replicaClient ?? this.primaryClient;
-  }
+  /** نسخة القراءة إن كانت مفعلة، وإلا القاعدة الأساسية. */
+  get readClient(): PrismaClient { return this.replica ?? this; }
+  get hasReplica(): boolean { return this.replica !== undefined; }
 
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Database connected successfully');
-    if (this.replicaClient) {
-      await this.replicaClient.$connect();
-      const [replicaState] = await this.replicaClient.$queryRaw<Array<{ inRecovery: boolean }>>(
-        Prisma.sql`SELECT pg_is_in_recovery() AS "inRecovery"`,
-      );
-      if (!replicaState?.inRecovery) {
-        throw new Error('Orders read database is not a PostgreSQL standby');
-      }
-      this.logger.log('Orders read replica connected and in recovery');
+    if (this.replica) {
+      await this.replica.$connect();
+      this.logger.log('Read replica connected (order reads go to the replica)');
     }
   }
 
-  async onModuleDestroy() {
-    await Promise.all([
-      this.$disconnect(),
-      this.replicaClient?.$disconnect() ?? Promise.resolve(),
-    ]);
-  }
+  async onModuleDestroy() { await Promise.all([this.$disconnect(), this.replica?.$disconnect()]); }
 }

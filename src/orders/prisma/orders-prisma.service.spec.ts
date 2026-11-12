@@ -1,22 +1,15 @@
 import { OrdersPrismaService } from './orders-prisma.service';
 
 describe('OrdersPrismaService', () => {
-  const originalReadReplicaEnabled = process.env.READ_REPLICA_ENABLED;
-  const originalQueryCountEnabled = process.env.PRISMA_QUERY_COUNT_ENABLED;
-
+  const original = process.env.READ_REPLICA_ENABLED;
   afterEach(() => {
-    if (originalReadReplicaEnabled === undefined) delete process.env.READ_REPLICA_ENABLED;
-    else process.env.READ_REPLICA_ENABLED = originalReadReplicaEnabled;
-    if (originalQueryCountEnabled === undefined) delete process.env.PRISMA_QUERY_COUNT_ENABLED;
-    else process.env.PRISMA_QUERY_COUNT_ENABLED = originalQueryCountEnabled;
+    if (original === undefined) delete process.env.READ_REPLICA_ENABLED;
+    else process.env.READ_REPLICA_ENABLED = original;
   });
 
-  it('returns the primary Prisma proxy for reads when the replica is disabled', () => {
+  it('reads from the primary when the replica is disabled', () => {
     process.env.READ_REPLICA_ENABLED = 'false';
-    process.env.PRISMA_QUERY_COUNT_ENABLED = 'false';
-
     const service = new OrdersPrismaService();
-
-    expect(typeof service.readClient.order.findMany).toBe('function');
+    expect(service.hasReplica).toBe(false);
   });
 });

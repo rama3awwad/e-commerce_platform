@@ -20,8 +20,8 @@ uploads/*
 *.log
 npm-debug.log*
 
-# Large raw k6 point streams (summary exports remain trackable)
-results/*-raw.json
+# k6 / seed outputs (generated locally)
+results/
 
 # OS / IDE
 .DS_Store

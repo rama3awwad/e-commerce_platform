@@ -9,14 +9,64 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-ecommerce_db}
+    # المتطلب الثالث: نسمح لنسخة القراءة بالاتصال (replication) عبر pg_hba.conf
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
     ports:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-ecommerce_db}"]
       interval: 5s
       timeout: 5s
+      retries: 30
+      # القاعدة صارت كبيرة (بيانات الأداء) فتحتاج وقتاً أطول عند الإقلاع
+      start_period: 60s
+
+  # ============================================================
+  #  المتطلب الثالث: نسخة القراءة (Read Replica) — نسخة تلقائية من db للقراءة فقط
+  # ============================================================
+  read-replica:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARY_HOST: db
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-ecommerce_db}
+    entrypoint: ["/bin/sh", "/opt/replica-entrypoint.sh"]
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./scripts/postgres-replica-entrypoint.sh:/opt/replica-entrypoint.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # جاهزة فقط عندما تكون فعلاً standby (pg_is_in_recovery = true)
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} && [ \"$$(psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -Atc 'SELECT pg_is_in_recovery()')\" = t ]"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  # ============================================================
+  #  المتطلب الثالث: Redis للتخزين المؤقت
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # حد أعلى للذاكرة، وعند الامتلاء يحذف Redis المفاتيح الأقل استخداماً
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 10
 
   # ============================================================
@@ -55,7 +105,11 @@ services:
       SERVER_PORT: 8081
       DDL_AUTO: update
       LOG_LEVEL: INFO
-      SQL_LOG_LEVEL: WARN
+      # المتطلب الثالث: اجعلها DEBUG لرؤية استعلامات SQL (إثبات N+1)
+      SQL_LOG_LEVEL: ${INVENTORY_SQL_LOG_LEVEL:-WARN}
+      # المتطلب الثالث: application.yml يطبع كل باراميتر لكل استعلام (TRACE)، وهذا أبطأ الخدمة تحت الحمل.
+      # Spring يقرأ هذا المتغير بدل القيمة الموجودة في الملف. اجعلها TRACE لرؤية الباراميترات عند التشخيص فقط.
+      LOGGING_LEVEL_ORG_HIBERNATE_ORM_JDBC_BIND: ${INVENTORY_SQL_BIND_LOG_LEVEL:-WARN}
     ports:
       - "9090:9090"   # Actuator/health (مفيد للتطوير، يمكن حذفه في الإنتاج)
       # ملاحظة: لا نُعرّض 9090 خارجياً — gRPC اتصال داخلي بين الحاويات
@@ -66,8 +120,9 @@ services:
       test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8081/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 40s
+      retries: 30
+      # على الأجهزة البطيئة يحتاج Spring Boot وقتاً أطول للإقلاع
+      start_period: 180s
 
   # ============================================================
   #  تطبيق NestJS الأساسي
@@ -107,6 +162,17 @@ services:
       # ====== إعدادات خدمة المخزون (المتطلب الثاني) ======
       INVENTORY_GRPC_URL: "inventory-service:9090"
       INVENTORY_GRPC_DEADLINE_MS: "3000"
+      # ====== المتطلب الثالث: الأداء والتخزين المؤقت ======
+      # كل تحسين له مفتاح true/false حتى نقيس قبل/بعد (غيّر شيئاً واحداً في كل مرة)
+      INVENTORY_BATCH_STOCKS: ${INVENTORY_BATCH_STOCKS:-true}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      READ_REPLICA_ENABLED: ${READ_REPLICA_ENABLED:-true}
+      ETAG_ENABLED: ${ETAG_ENABLED:-true}
+      REDIS_URL: "redis://redis:6379"
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      READ_YOUR_WRITES_WINDOW_MS: ${READ_YOUR_WRITES_WINDOW_MS:-5000}
+      PRODUCTS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
+      ORDERS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
@@ -115,6 +181,10 @@ services:
       db:
         condition: service_healthy
       inventory-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      read-replica:
         condition: service_healthy
 
   perf-seed:
@@ -144,5 +214,6 @@ services:
 
 volumes:
   postgres_data:
+  postgres_replica_data:
   inventory_data:
   uploads:

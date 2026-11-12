@@ -1,24 +1,21 @@
+# المتطلب الثالث — إعدادات اختبار الحمل فقط (لا تُستخدم في التشغيل العادي).
+# نرفع حد الـrate limit حتى لا يرفض التطبيق طلبات k6 بـ429 فيُفسد القياس.
 services:
   backend:
     environment:
-      THROTTLE_LIMIT: ${PERF_THROTTLE_LIMIT:-10000}
-      LOGIN_THROTTLE_LIMIT: ${PERF_LOGIN_THROTTLE_LIMIT:-10000}
-      PRISMA_QUERY_COUNT_ENABLED: ${PERF_QUERY_COUNT_ENABLED:-false}
+      THROTTLE_LIMIT: 1000000
+      LOGIN_THROTTLE_LIMIT: 1000000
       RUN_SEED: "false"
-      CACHE_ENABLED: "false"
-      READ_REPLICA_ENABLED: ${PERF_READ_REPLICA_ENABLED:-false}
-      ETAG_ENABLED: "false"
 
   k6:
-    image: grafana/k6:latest
+    image: grafana/k6:0.54.0
     profiles: ["loadtest"]
     working_dir: /scripts
-    command: ["run"]
     environment:
       BASE_URL: http://backend:3000/api/v1
       PERF_USER_PASSWORD: ${PERF_USER_PASSWORD:-Perf@12345}
       PERF_HEAVY_USERS: ${PERF_HEAVY_USERS:-20}
-      K6_SUMMARY_TREND_STATS: avg,min,med,p(90),p(95),p(99),max
+      K6_PROFILE: ${K6_PROFILE:-full}
     volumes:
       - ./k6:/scripts:ro
       - ./results:/results
