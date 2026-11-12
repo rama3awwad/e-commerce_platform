@@ -12,7 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -54,6 +57,22 @@ public class InventoryService {
                 .orElse(0);
     }
 
+    /**
+     * المتطلب الثالث (N+1): قراءة كميات عدة منتجات باستعلام SQL واحد
+     * (SELECT ... WHERE product_id IN (...)) بدل استعلام لكل منتج.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Integer> getStocks(List<String> productIds) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        if (productIds.isEmpty()) {
+            return result;
+        }
+        productIds.forEach(id -> result.put(id, 0));
+        stockRepo.findAllById(productIds)
+                .forEach(item -> result.put(item.getProductId(), item.getQuantity()));
+        return result;
+    }
+
     // ====================================================================
     // SET STOCK
     // ====================================================================
@@ -68,6 +87,28 @@ public class InventoryService {
         item.setQuantity(quantity);
         stockRepo.save(item);
         return quantity;
+    }
+
+    @Transactional
+    public int setStocks(List<String> productIds, int quantity) {
+        if (quantity < 0) {
+            throw new IllegalArgumentException("Quantity cannot be negative: " + quantity);
+        }
+        if (productIds.isEmpty()) {
+            return 0;
+        }
+        if (productIds.size() > 1000 || productIds.stream().distinct().count() != productIds.size()) {
+            throw new IllegalArgumentException("Provide at most 1000 unique product IDs");
+        }
+
+        Map<String, StockItem> itemsById = new HashMap<>();
+        stockRepo.findAllById(productIds).forEach(item -> itemsById.put(item.getProductId(), item));
+        List<StockItem> items = productIds.stream()
+                .map(productId -> itemsById.computeIfAbsent(productId, id -> new StockItem(id, quantity)))
+                .peek(item -> item.setQuantity(quantity))
+                .toList();
+        stockRepo.saveAll(items);
+        return items.size();
     }
 
     // ====================================================================

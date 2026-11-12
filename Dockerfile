@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # Install dependencies once. BuildKit keeps npm's download cache across retries.
 FROM node:20-alpine AS dependencies
 WORKDIR /app

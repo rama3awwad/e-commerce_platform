@@ -10,6 +10,7 @@ import { InventoryPort, ReservationItem, ReserveResult } from './api/inventory.p
 
 interface InventoryGrpcClient {
   getStock(request: { productId: string }): Observable<GetStockGrpcResponse>;
+  getStocks(request: { productIds: string[] }): Observable<GetStocksGrpcResponse>;
   setStock(request: { productId: string; quantity: number }): Observable<SetStockGrpcResponse>;
   reserveStock(request: {
     reservationId: string;
@@ -21,6 +22,10 @@ interface InventoryGrpcClient {
 interface GetStockGrpcResponse {
   productId: string;
   available: number;
+}
+
+interface GetStocksGrpcResponse {
+  items?: Array<{ productId: string; quantity: number }>;
 }
 
 interface SetStockGrpcResponse {
@@ -75,13 +80,25 @@ export class GrpcInventoryAdapter implements InventoryPort, OnModuleInit {
     }
   }
 
+  // المتطلب الثالث — مشكلة N+1:
+  //   قبل: نداء gRPC (واستعلام SQL في خدمة المخزون) لكل منتج في الصفحة → 20 منتج = 20 نداء.
+  //   بعد: نداء GetStocks واحد واستعلام SQL واحد مهما كان عدد المنتجات.
+  // INVENTORY_BATCH_STOCKS=false يعيد السلوك القديم فقط لقياس الفرق قبل/بعد.
   async getStocks(productIds: string[]): Promise<Record<string, number>> {
     if (!productIds.length) return {};
     try {
-      const results = await Promise.all(
-        productIds.map(async (id) => [id, await this.getStock(id)] as const),
+      if (process.env.INVENTORY_BATCH_STOCKS === 'false') {
+        const results = await Promise.all(
+          productIds.map(async (id) => [id, await this.getStock(id)] as const),
+        );
+        return Object.fromEntries(results);
+      }
+      const res = await lastValueFrom(
+        this.client.getStocks({ productIds }).pipe(timeout(this.deadlineMs)),
       );
-      return Object.fromEntries(results);
+      const stocks: Record<string, number> = Object.fromEntries(productIds.map((id) => [id, 0]));
+      for (const item of res.items ?? []) stocks[item.productId] = item.quantity ?? 0;
+      return stocks;
     } catch (err) {
       this.logger.error('getStocks failed: ' + this.errMsg(err));
       throw err;

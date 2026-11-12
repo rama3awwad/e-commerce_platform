@@ -37,6 +37,7 @@ model OrderItem {
   unitPrice Decimal @db.Decimal(10, 2)
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
+  @@index([orderId])
   @@index([productId])
   @@map("order_items")
 }

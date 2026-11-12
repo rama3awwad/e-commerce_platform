@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '.prisma/orders-client';
+import { OrderStatus, Prisma, PrismaClient } from '.prisma/orders-client';
 import { Role } from '../common/enums/role.enum';
 import { OrdersPrismaService } from './prisma/orders-prisma.service';
 import { INVENTORY_PORT, InventoryPort } from '../inventory/api/inventory.port';
@@ -9,11 +9,22 @@ import { CodedException } from '../common/exceptions/coded.exception';
 import { CreateOrderDto, OrderQueryDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { canTransition } from './order-transitions';
 import { randomUUID } from 'crypto';
+import { RecentWritesService } from '../common/cache/recent-writes.service';
+import { setResponseHeader } from '../common/perf/response-headers';
 
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
-  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi) {}
+  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi, private readonly recentWrites: RecentWritesService) {}
+
+  // المتطلب الثالث: الطلبات لا تُخزّن في Redis (خاصة بكل مستخدم وتتغير حالتها).
+  // القراءة من نسخة القراءة، إلا إذا كتب هذا المستخدم شيئاً خلال آخر ثوانٍ → القاعدة الأساسية،
+  // حتى يرى الطلب الذي أنشأه للتو (read-your-writes).
+  private async reader(userId: string): Promise<PrismaClient> {
+    const usePrimary = !this.prisma.hasReplica || await this.recentWrites.isRecent(`orders:user:${userId}`);
+    setResponseHeader('X-Read-Source', usePrimary ? 'primary' : 'replica');
+    return usePrimary ? this.prisma : this.prisma.readClient;
+  }
 
   async create(userId: string, dto: CreateOrderDto) {
     const products = await this.products.findActiveByIds(dto.items.map((i) => i.productId));
@@ -32,6 +43,7 @@ export class OrdersService {
         const created = await tx.order.create({ data: { id, userId, totalAmount, items: { create: dto.items.map((item) => { const p = products.find((x) => x.id === item.productId)!; return { productId: p.id, quantity: item.quantity, unitPrice: new Prisma.Decimal(p.price) }; }) } }, include: { items: true } });
         return created;
       });
+      await this.recentWrites.mark(`orders:user:${userId}`);
       await this.notifySafely(userId, 'ORDER_CREATED', 'Order created', `Order #${order.orderNumber} was created.`);
       return order;
     } catch (error) {
@@ -43,11 +55,12 @@ export class OrdersService {
   async list(user: { id: string; role: Role }, query: OrderQueryDto) {
     const where: Prisma.OrderWhereInput = { ...(user.role === Role.ADMIN ? (query.userId ? { userId: query.userId } : {}) : { userId: user.id }), ...(query.status ? { status: query.status } : {}) };
     const { page = 1, limit = 10 } = query;
-    const [items, total] = await Promise.all([this.prisma.order.findMany({ where, include: { items: true }, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }), this.prisma.order.count({ where })]);
+    const reader = await this.reader(user.id);
+    const [items, total] = await Promise.all([reader.order.findMany({ where, include: { items: true }, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }), reader.order.count({ where })]);
     const totalPages = Math.ceil(total / limit); return { items, meta: { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
   }
   async findOne(id: string, requester: { id: string; role: Role }) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
+    const order = await (await this.reader(requester.id)).order.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Order not found' });
     if (requester.role !== Role.ADMIN && order.userId !== requester.id) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'You cannot access this order' });
     return order;
@@ -68,6 +81,7 @@ export class OrdersService {
       }
       return tx.order.findUnique({ where: { id }, include: { items: true } });
     });
+    await this.recentWrites.mark(`orders:user:${order.userId}`, `orders:user:${requester.id}`);
     await this.notifySafely(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order #${order.orderNumber} is now ${status}.`);
     // Commit the database transition first; reconcile logged release failures manually.
     if (status === OrderStatus.CANCELLED && updated) {

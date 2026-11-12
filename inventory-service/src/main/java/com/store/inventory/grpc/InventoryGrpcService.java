@@ -49,6 +49,22 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
     }
 
     @Override
+    public void getStocks(GetStocksRequest request,
+                          StreamObserver<GetStocksResponse> responseObserver) {
+        log.info("gRPC GetStocks: {} products in ONE call", request.getProductIdsCount());
+
+        GetStocksResponse.Builder response = GetStocksResponse.newBuilder();
+        service.getStocks(request.getProductIdsList()).forEach((productId, quantity) ->
+                response.addItems(StockItem.newBuilder()
+                        .setProductId(productId)
+                        .setQuantity(quantity)
+                        .build()));
+
+        responseObserver.onNext(response.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
     public void setStock(SetStockRequest request,
                          StreamObserver<SetStockResponse> responseObserver) {
 
@@ -63,6 +79,22 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
                     .setAvailable(available)
                     .build();
             responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException e) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+        }
+    }
+
+    @Override
+    public void setStocks(SetStocksRequest request,
+                         StreamObserver<SetStocksResponse> responseObserver) {
+        try {
+            int updatedCount = service.setStocks(request.getProductIdsList(), request.getQuantity());
+            responseObserver.onNext(SetStocksResponse.newBuilder()
+                    .setUpdatedCount(updatedCount)
+                    .build());
             responseObserver.onCompleted();
         } catch (IllegalArgumentException e) {
             responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT

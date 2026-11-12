@@ -1,6 +1,6 @@
-# E-Commerce Platform API (Requirement 1)
+# E-Commerce Platform API
 
-NestJS 10 + Prisma 6 + PostgreSQL 16 REST API for a small e-commerce platform. This delivery covers authentication, user administration, products/categories, orders, notifications, and an inventory adapter seam. The inventory is an in-memory demo adapter; the separate gRPC microservice belongs to Requirement 2 and is not implemented here.
+NestJS 10 + Prisma 6 + PostgreSQL 16 REST API for an e-commerce platform, with a Spring Boot inventory microservice backed by its own PostgreSQL database and accessed through gRPC.
 
 ## Run with Docker
 
@@ -42,6 +42,19 @@ The seed also creates eight categories and 25 realistic catalog products, with p
 
 Set `RUN_SEED=true` to invoke the seed at container startup. By default it skips any database that already contains users or products. Set `FORCE_SEED=true` to bypass that empty-database guard; the operation remains insert-only.
 
+## Performance dataset
+
+Start the Compose services and allow the regular seed to create categories before generating performance data. The seed container uses the repository's Docker build and Compose network:
+
+```sh
+docker compose up --build -d
+docker compose --profile perf run --build --rm perf-seed
+```
+
+The performance seed is idempotent and uses deterministic IDs with batched inserts. Defaults are 5,000 customer accounts, 20,000 products, and 300,000 orders with 1–5 items each; 20 accounts receive most of the orders. All generated accounts share `Perf@12345` (override with `PERF_USER_PASSWORD`), and the seed prints 50 login emails for load-test setup. Products receive one million units of stock through the inventory service's batched gRPC operation.
+
+Counts can be changed with `PERF_USERS`, `PERF_PRODUCTS`, `PERF_ORDERS`, and `PERF_HEAVY_USERS` in `.env`. To reset only generated performance users, their orders/items, and products whose names start with `[PERF] Product `, run `docker compose --profile perf run --build --rm perf-seed npm run seed:perf -- --reset` and type `RESET PERF DATA` when prompted. The corresponding inventory quantities are set to zero; other seeded or user data is not deleted. The command then regenerates the configured dataset. To correct heavy-user ownership on an already-generated dataset without deleting rows, run `docker compose --profile perf run --rm perf-seed npm run seed:perf -- --repair-heavy-users`. Actual row counts, duration, and table/index sizes are written to `results/perf-seed.json`.
+
 ## API conventions
 
 - Every API route is under `/api/v1`.
@@ -61,15 +74,15 @@ src/
 ├── products/         categories, catalog CRUD, file uploads
 ├── orders/           ownership, order transaction, status transition table
 ├── notifications/    per-user notifications created from order events
-├── inventory/        InventoryPort token + in-memory adapter (replaceable seam)
+├── inventory/        InventoryPort token + gRPC adapter
 ├── common/           auth guards, validation, response/error handling, pagination
 └── prisma/           Prisma connection
 
 PostgreSQL 16 ← Prisma migrations/seed ← NestJS REST API → uploads volume
-                                            └─ InventoryPort → in-memory demo adapter
+                                            └─ gRPC → Inventory service → PostgreSQL 16
 ```
 
-Product records do not contain stock. Products and Orders use only `INVENTORY_PORT`; Requirement 2 can replace the provider with a persistent inventory service without changing those modules. The demo adapter keeps stock in process memory, so stock overrides and reservations reset when the backend process restarts. Seed products use external image URLs, while uploaded product images use relative `/uploads/...` paths.
+Product records do not contain stock. Products and Orders use only `INVENTORY_PORT`; the current provider communicates with the persistent inventory service over gRPC. Seed products use external image URLs, while uploaded product images use relative `/uploads/...` paths.
 
 ## Routes and roles
 
@@ -83,7 +96,7 @@ Product records do not contain stock. Products and Orders use only `INVENTORY_PO
 | POST/PATCH/DELETE | `/categories` | ADMIN | Category management |
 | GET | `/products`, `/products/:id` | Any authenticated | Search/filter/list/details (stock comes from InventoryPort) |
 | POST/PATCH/DELETE | `/products`, `/products/:id` | ADMIN | Multipart product CRUD; ordered products are soft-deleted |
-| PATCH | `/products/:id/stock` | ADMIN | Set in-memory demo stock |
+| PATCH | `/products/:id/stock` | ADMIN | Set product stock through the inventory service |
 | POST | `/orders` | CUSTOMER | Create order from `{ items: [{ productId, quantity }] }` |
 | GET | `/orders`, `/orders/:id` | Any authenticated | Customers see only their orders; admins can see all |
 | PATCH | `/orders/:id/status` | ADMIN | Advance order status |
@@ -105,7 +118,7 @@ npm run test:e2e
 
 ## Known limitations
 
-- Inventory is an in-memory stub. Stock resets to `STUB_DEFAULT_STOCK` when the backend restarts; Requirement 2 replaces it with a persistent service behind the same `InventoryPort`.
+- Inventory is a separate service and database; availability and reservation behaviour depend on that service being healthy.
 - Seed products use external image URLs, while uploaded images use relative `/uploads/...` paths.
 
 ## Non-functional requirement → implementation → proof
