@@ -13,6 +13,9 @@ import OrdersPage from "./pages/OrdersPage";
 import OrderDetailsPage from "./pages/OrderDetailsPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import ConcurrencyTestPage from "./pages/ConcurrencyTestPage";
+import RealtimeTestPage from "./pages/RealtimeTestPage";
+import RealtimeConnector from "./components/RealtimeConnector";
+import AdminAsyncMonitorPage from "./pages/admin/AdminAsyncMonitorPage";
 import AdminProductsPage from "./pages/admin/AdminProductsPage";
 import AdminOrdersPage from "./pages/admin/AdminOrdersPage";
 import AdminCategoriesPage from "./pages/admin/AdminCategoriesPage";
@@ -24,6 +27,7 @@ function App() {
       <AuthProvider>
         <NotificationsProvider>
           <CartProvider>
+            <RealtimeConnector />
             <Navbar />
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -78,6 +82,14 @@ function App() {
                 }
               />
               <Route
+                path="/realtime-test"
+                element={
+                  <ProtectedRoute role="CUSTOMER">
+                    <RealtimeTestPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/notifications"
                 element={
                   <ProtectedRoute>
@@ -100,6 +112,14 @@ function App() {
                 element={
                   <ProtectedRoute role="ADMIN">
                     <AdminOrdersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/async-monitor"
+                element={
+                  <ProtectedRoute role="ADMIN">
+                    <AdminAsyncMonitorPage />
                   </ProtectedRoute>
                 }
               />

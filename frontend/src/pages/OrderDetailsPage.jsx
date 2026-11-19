@@ -5,6 +5,9 @@ import { getErrorMessage } from "../api/errors";
 import { loadProductNames } from "../api/products";
 import { useAuth } from "../context/AuthContext";
 import OrderCard from "../components/OrderCard";
+import LiveBadge from "../components/LiveBadge";
+import { onRealtime, watchOrder } from "../api/realtime";
+import { statusLabels } from "../utils/status";
 
 function OrderDetailsPage() {
   const { id } = useParams();
@@ -42,6 +45,22 @@ function OrderDetailsPage() {
     };
   }, [id]);
 
+  // ===== المتطلب الرابع: متابعة حالة الطلب لحظياً (للزبون صاحب الطلب فقط) =====
+  const role = user ? user.role : "";
+  useEffect(() => {
+    if (role !== "CUSTOMER") return;
+    const stop = watchOrder(id);
+    const off = onRealtime("order.status.changed", (order) => {
+      if (order.id !== id) return;
+      setResult((r) => (r.order ? { ...r, order: { ...r.order, ...order } } : r));
+      setMessage("تم تحديث حالة طلبك: " + statusLabels[order.status]);
+    });
+    return () => {
+      off();
+      stop();
+    };
+  }, [id, role]);
+
   async function handleCancel() {
     if (!window.confirm("هل أنت متأكد من إلغاء الطلب؟")) return;
     setMessage("");
@@ -68,7 +87,7 @@ function OrderDetailsPage() {
 
       {message && <div className="alert alert-success">{message}</div>}
       {!loading && result.error && <div className="alert alert-error">{result.error}</div>}
-
+      {role === "CUSTOMER" && <LiveBadge />}
       {loading && <div className="spinner"></div>}
 
       {!loading && result.order && (
