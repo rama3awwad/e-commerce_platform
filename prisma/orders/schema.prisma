@@ -41,3 +41,36 @@ model OrderItem {
   @@index([productId])
   @@map("order_items")
 }
+enum EmailJobStatus {
+  QUEUED
+  RETRYING
+  SENT
+  DEAD
+}
+
+/// المتطلب الرابع: يُنشأ داخل نفس transaction إنشاء الطلب (Outbox) ويحدّثه الـ Worker.
+model EmailJob {
+  id          String         @id @default(uuid())
+  orderId     String         @unique
+  recipient   String
+  payload     Json
+  status      EmailJobStatus @default(QUEUED)
+  attempts    Int            @default(0)
+  lastError   String?
+  publishedAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([publishedAt, createdAt])
+  @@map("email_jobs")
+}
+/// المتطلب الرابع: مفاتيح تشغيل بسيطة يغيّرها الأدمن من الواجهة ويقرؤها الـ Worker.
+model AppFlag {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_flags")
+}

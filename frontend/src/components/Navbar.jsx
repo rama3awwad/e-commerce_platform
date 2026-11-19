@@ -61,6 +61,9 @@ function Navbar() {
                   <NavLink to="/admin/orders" className={linkClass}>
                     الطلبات
                   </NavLink>
+                  <NavLink to="/admin/async-monitor" className={linkClass}>
+                    مراقبة الإيميلات
+                  </NavLink>
                   <NavLink to="/admin/categories" className={linkClass}>
                     الأقسام
                   </NavLink>
@@ -81,6 +84,9 @@ function Navbar() {
                   </NavLink>
                   <NavLink to="/concurrency-test" className={linkClass}>
                     اختبار التزامن
+                  </NavLink>
+                  <NavLink to="/realtime-test" className={linkClass}>
+                    اختبار اللحظي
                   </NavLink>
                 </>
               )}

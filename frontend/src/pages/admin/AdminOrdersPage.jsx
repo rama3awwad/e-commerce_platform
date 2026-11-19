@@ -4,6 +4,9 @@ import api from "../../api/client";
 import { getErrorMessage } from "../../api/errors";
 import { loadProductNames } from "../../api/products";
 import Pagination from "../../components/Pagination";
+import LiveBadge from "../../components/LiveBadge";
+import { onRealtime, watchAdminOrders } from "../../api/realtime";
+import { addNewOrder, applyStatusChange } from "../../utils/realtimeOrders";
 import {
   formatDate,
   nextStatuses,
@@ -12,12 +15,12 @@ import {
 } from "../../utils/status";
 
 // كرت طلب بأسلوب المسؤول: بعرض اسم العميل وأزرار تغيير الحالة
-function AdminOrderCard({ order, names, customers, busy, onStatus }) {
+function AdminOrderCard({ order, names, customers, busy, fresh, onStatus }) {
   const transitions = nextStatuses[order.status] || [];
   const customer = customers[order.userId] || "عميل " + order.userId.slice(0, 8);
 
   return (
-    <div className="card order-card">
+    <div className={"card order-card" + (fresh ? " order-new" : "")}>
       <div className="order-head">
         <div>
           <Link to={"/orders/" + order.id} className="order-number">
@@ -84,6 +87,7 @@ function AdminOrdersPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [fresh, setFresh] = useState({});
 
   const queryKey = [page, status].join("|");
   const loading = result.key !== queryKey;
@@ -138,6 +142,39 @@ function AdminOrdersPage() {
     };
   }, [queryKey, page, status]);
 
+    // ===== المتطلب الرابع: التحديثات اللحظية (بدون Refresh) =====
+  // اشتراك بقناة الأدمن (يُعاد تلقائياً لو انقطع الاتصال)
+  useEffect(() => {
+    return watchAdminOrders((ack) => {
+      if (!ack.ok) setError("تعذر الاشتراك بالتحديثات اللحظية: " + ack.message);
+    });
+  }, []);
+
+  useEffect(() => {
+    const offCreated = onRealtime("order.created", async (order) => {
+      setResult((r) => ({ ...r, orders: addNewOrder(r.orders, order, { page, status }) }));
+      setFresh((f) => ({ ...f, [order.id]: true }));
+      setTimeout(() => {
+        setFresh((f) => {
+          const next = { ...f };
+          delete next[order.id];
+          return next;
+        });
+      }, 5000);
+      setMessage("طلب جديد #" + order.orderNumber + " وصل للتو");
+      const names = await loadProductNames(order.items.map((item) => item.productId));
+      setResult((r) => ({ ...r, names: { ...r.names, ...names } }));
+    });
+    const offStatus = onRealtime("order.status.changed", (order) => {
+      setResult((r) => ({ ...r, orders: applyStatusChange(r.orders, order, { status }) }));
+    });
+    return () => {
+      offCreated();
+      offStatus();
+    };
+  }, [page, status]);
+
+
   function chooseStatus(value) {
     setStatus(value);
     setPage(1);
@@ -174,7 +211,7 @@ function AdminOrdersPage() {
   return (
     <div className="container page">
       <h1 className="page-title">إدارة الطلبات</h1>
-
+      <LiveBadge />
       {message && <div className="alert alert-success">{message}</div>}
       {!loading && error && <div className="alert alert-error">{error}</div>}
 
@@ -208,6 +245,7 @@ function AdminOrdersPage() {
             names={result.names}
             customers={customers}
             busy={busy}
+            fresh={Boolean(fresh[order.id])}
             onStatus={handleStatus}
           />
         ))
