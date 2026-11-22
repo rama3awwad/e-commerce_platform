@@ -147,6 +147,22 @@ services:
       start_period: 20s
 
   # ============================================================
+  #  المتطلب الرابع: Soketi (خادم WebSocket مستضاف ذاتياً، متوافق مع Pusher)
+  #  - الباك يرسل له الأحداث داخل شبكة Docker عبر soketi:6001
+  #  - المتصفح يتصل به مباشرة عبر localhost:6001
+  # ============================================================
+  soketi:
+    image: quay.io/soketi/soketi:latest-16-alpine
+    restart: unless-stopped
+    environment:
+      SOKETI_DEFAULT_APP_ID: ${PUSHER_APP_ID:-app-id}
+      SOKETI_DEFAULT_APP_KEY: ${PUSHER_APP_KEY:-app-key}
+      SOKETI_DEFAULT_APP_SECRET: ${PUSHER_APP_SECRET:-app-secret}
+      SOKETI_DEBUG: ${SOKETI_DEBUG:-0}
+    ports:
+      - "6001:6001"
+
+  # ============================================================
   #  تطبيق NestJS الأساسي
   # ============================================================
   backend:
@@ -198,6 +214,12 @@ services:
       # ====== المتطلب الرابع: المعالجة غير المتزامنة ======
       RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672"
       RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
+      # Soketi: من داخل Docker نصل إليه باسم الحاوية (soketi)، أما المتصفح فيصل إليه عبر localhost:6001
+      PUSHER_APP_ID: ${PUSHER_APP_ID:-app-id}
+      PUSHER_APP_KEY: ${PUSHER_APP_KEY:-app-key}
+      PUSHER_APP_SECRET: ${PUSHER_APP_SECRET:-app-secret}
+      SOKETI_HOST: soketi
+      SOKETI_PORT: "6001"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
@@ -212,7 +234,9 @@ services:
       read-replica:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy  
+        condition: service_healthy
+      soketi:
+        condition: service_started
 
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:${PORT:-3000}/api/v1/health || exit 1"]

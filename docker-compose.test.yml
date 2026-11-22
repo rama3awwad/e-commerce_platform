@@ -24,6 +24,15 @@ services:
       interval: 5s
       timeout: 10s
       retries: 20
-      start_period: 15s    
+      start_period: 15s
+  # Soketi للاختبارات (المنفذ 6002 كي لا يتعارض مع سوكتي التشغيل العادي 6001)
+  soketi:
+    image: quay.io/soketi/soketi:latest-16-alpine
+    environment:
+      SOKETI_DEFAULT_APP_ID: app-id
+      SOKETI_DEFAULT_APP_KEY: app-key
+      SOKETI_DEFAULT_APP_SECRET: app-secret
+    ports:
+      - "6002:6001"
 volumes:
   postgres_test_data:

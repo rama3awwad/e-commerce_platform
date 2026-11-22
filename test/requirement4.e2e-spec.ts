@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { io, Socket } from 'socket.io-client';
+import type PusherClient from 'pusher-js';
 import { createTestApp, listenInternalApiUrls } from './configure-test-app';
 import { ProductsPrismaService } from '../src/products/prisma/products-prisma.service';
 import { UsersPrismaService } from '../src/users/prisma/users-prisma.service';
@@ -17,6 +17,8 @@ import { OutboxRelayService } from '../src/orders/email/outbox-relay.service';
 process.env.LOGIN_THROTTLE_LIMIT = '5';
 process.env.LOGIN_THROTTLE_TTL = '60000';
 const { AppModule } = require('../src/app.module');
+// pusher-js على Node يُصدَّر مباشرة (module.exports = Pusher) فنستعمل require بدل import default
+const Pusher: typeof PusherClient = require('pusher-js');
 
 jest.setTimeout(90000);
 
@@ -31,7 +33,8 @@ async function waitFor<T>(fn: () => Promise<T | null | undefined | false>, what:
 /**
  * المتطلب الرابع (e2e): كل الاختبارات تمر من الفلو الحقيقي للمشروع:
  *   HTTP (إنشاء طلب) ثم قاعدة البيانات (Outbox) ثم RabbitMQ ثم الـ Worker (consumer) ثم الإيميل،
- *   وWebSocket حقيقي بتوكنات JWT حقيقية. الإيميل وحده مُستبدل بـ spy كي لا نرسل بريداً فعلياً.
+ *   وSoketi الحقيقي (حاوية docker-compose.test.yml) مع pusher-js وتوكنات JWT حقيقية عبر /realtime/auth.
+ *   الإيميل وحده مُستبدل بـ spy كي لا نرسل بريداً فعلياً.
  */
 describe('Requirement 4 async processing and real-time e2e', () => {
   let app: INestApplication;
@@ -39,22 +42,42 @@ describe('Requirement 4 async processing and real-time e2e', () => {
   let rabbit: RabbitService;
   let relay: OutboxRelayService;
   let adminToken: string; let customerAToken: string; let customerBToken: string;
-  let productId: string; let origin: string;
+  let productId: string;
   const mail = { sent: [] as { to: string; subject: string }[], fail: false, send: jest.fn() };
-  const sockets: Socket[] = [];
+  const clients: PusherClient[] = [];
 
   const sentFor = (orderNumber: number) => mail.sent.find((m) => m.subject.includes(`#${orderNumber}`));
   const createOrder = async (token = customerAToken) => (await request(app.getHttpServer()).post('/api/v1/orders').set('Authorization', `Bearer ${token}`).send({ items: [{ productId, quantity: 1 }] }).expect(201)).body.data;
   const jobOf = (orderId: string) => ordersPrisma.emailJob.findUnique({ where: { orderId } });
   const jobWithStatus = (orderId: string, status: string) => waitFor(async () => { const j = await jobOf(orderId); return j && j.status === status ? j : null; }, `job ${orderId} to be ${status}`);
-  const connect = (token?: string) => new Promise<Socket>((resolve, reject) => {
-    const s = io(`${origin}/realtime`, { auth: { token }, transports: ['websocket'], reconnection: false });
-    sockets.push(s); s.on('connect', () => resolve(s)); s.on('connect_error', reject);
+  // طلب التفويض الحقيقي لقناة (نفس ما يرسله pusher-js): form-urlencoded + JWT
+  const authChannel = (token: string | undefined, channel: string, socketId = '123.456') => {
+    const req = request(app.getHttpServer()).post('/api/v1/realtime/auth').type('form').send({ socket_id: socketId, channel_name: channel });
+    return token ? req.set('Authorization', `Bearer ${token}`) : req;
+  };
+  // اتصال حقيقي بـ Soketi؛ التفويض يمرّ عبر الـ API الحقيقي (customHandler بدل XHR لأننا خارج المتصفح)
+  const connect = (token: string) => new Promise<PusherClient>((resolve, reject) => {
+    const client = new Pusher(process.env.PUSHER_APP_KEY || 'app-key', {
+      cluster: 'mt1', wsHost: process.env.SOKETI_HOST || 'localhost', wsPort: Number(process.env.SOKETI_PORT || 6001),
+      forceTLS: false, enabledTransports: ['ws'], disableStats: true,
+      channelAuthorization: {
+        customHandler: ({ socketId, channelName }, callback) => {
+          authChannel(token, channelName, socketId).then((res) => (res.status === 200 ? callback(null, res.body) : callback(new Error(`${res.status} ${res.body.code}`), null)), (e) => callback(e, null));
+        },
+      },
+    });
+    clients.push(client);
+    client.connection.bind('connected', () => resolve(client));
+    client.connection.bind('error', reject);
   });
-  const nextEvent = (s: Socket, event: string, match: (p: any) => boolean = () => true, ms = 8000) => new Promise<any>((resolve, reject) => {
+  const subscribe = (client: PusherClient, channel: string) => new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    const ch = client.subscribe(channel);
+    ch.bind('pusher:subscription_succeeded', () => resolve({ ok: true }));
+    ch.bind('pusher:subscription_error', (e: { error?: string }) => resolve({ ok: false, error: e?.error }));
+  });
+  const nextEvent = (client: PusherClient, channel: string, event: string, match: (p: any) => boolean = () => true, ms = 8000) => new Promise<any>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${event}`)), ms);
-    const handler = (p: any) => { if (match(p)) { clearTimeout(timer); s.off(event, handler); resolve(p); } };
-    s.on(event, handler);
+    client.channel(channel).bind(event, (p: any) => { if (match(p)) { clearTimeout(timer); resolve(p); } });
   });
 
   beforeAll(async () => {
@@ -68,8 +91,7 @@ describe('Requirement 4 async processing and real-time e2e', () => {
       providers: [OrdersPrismaService, OrderEventsPublisher, OrderEmailConsumer, OutboxRelayService],
     }).overrideProvider(MailService).useValue(mail).compile();
     app = await createTestApp(moduleRef.createNestApplication());
-    const base = await listenInternalApiUrls(app);
-    origin = base.replace('/api/v1', '');
+    await listenInternalApiUrls(app);
     ordersPrisma = app.get(OrdersPrismaService); rabbit = app.get(RabbitService); relay = app.get(OutboxRelayService);
     await app.get(UsersPrismaService).user.updateMany({ where: { email: { in: ['admin@store.com', 'customer@test.com', 'customer2@test.com'] } }, data: { loginAttempts: 0, lockUntil: null } });
     const http = request(app.getHttpServer());
@@ -83,7 +105,7 @@ describe('Requirement 4 async processing and real-time e2e', () => {
     await waitFor(async () => rabbit.isConnected, 'RabbitMQ connection', 30000);
     await sleep(500); // ليبدأ الـ consumer
   });
-  afterEach(() => { mail.fail = false; sockets.splice(0).forEach((s) => s.close()); });
+  afterEach(() => { mail.fail = false; clients.splice(0).forEach((c) => c.disconnect()); });
   afterAll(async () => { await app?.close(); });
 
   it('responds immediately, stores the outbox job with the order, and the worker sends the email', async () => {
@@ -152,33 +174,45 @@ describe('Requirement 4 async processing and real-time e2e', () => {
     await http.post('/api/v1/admin/email-jobs/00000000-0000-4000-8000-000000000000/requeue').set('Authorization', `Bearer ${adminToken}`).expect(404);
   });
 
-  it('pushes orders and status changes in real time and enforces channel permissions', async () => {
-    await expect(connect(undefined)).rejects.toThrow();
-    await expect(connect('not-a-jwt')).rejects.toThrow();
+  it('authorizes real-time channels by identity and role (no token, customer vs admin, owner vs other customer)', async () => {
+    const order = await createOrder(customerAToken);
+    const admin = 'private-admin.orders'; const mine = `private-order.${order.id}`;
 
+    await authChannel(undefined, admin).expect(401);
+    await authChannel('not-a-jwt', admin).expect(401);
+    expect((await authChannel(customerAToken, admin).expect(403)).body.code).toBe('FORBIDDEN');
+    expect((await authChannel(customerBToken, mine).expect(403)).body.code).toBe('FORBIDDEN');
+    expect((await authChannel(adminToken, mine).expect(403)).body.code).toBe('FORBIDDEN');
+    await authChannel(adminToken, admin).expect(200).expect((r) => expect(r.body.auth).toMatch(/^.+:[0-9a-f]{64}$/));
+    await authChannel(customerAToken, mine).expect(200).expect((r) => expect(r.body.auth).toMatch(/^.+:[0-9a-f]{64}$/));
+  });
+
+  it('pushes new orders to the admin and status changes to the owner in real time, and nobody else receives them', async () => {
     const admin = await connect(adminToken); const alice = await connect(customerAToken); const bob = await connect(customerBToken);
-    expect(await admin.emitWithAck('subscribe:admin')).toEqual({ ok: true });
-    expect(await alice.emitWithAck('subscribe:admin')).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    expect(await subscribe(admin, 'private-admin.orders')).toEqual({ ok: true });
+    expect((await subscribe(alice, 'private-admin.orders')).ok).toBe(false);
 
-    const created = nextEvent(admin, 'order.created');
+    const created = nextEvent(admin, 'private-admin.orders', 'order.created');
     const order = await createOrder(customerAToken);
     expect(await created).toMatchObject({ id: order.id, status: 'PENDING' });
 
-    expect(await alice.emitWithAck('subscribe:order', { orderId: order.id })).toEqual({ ok: true });
-    expect(await bob.emitWithAck('subscribe:order', { orderId: order.id })).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    const mine = `private-order.${order.id}`;
+    expect(await subscribe(alice, mine)).toEqual({ ok: true });
+    expect((await subscribe(bob, mine)).ok).toBe(false);
 
-    const bobEvents: any[] = []; bob.on('order.status.changed', (p) => bobEvents.push(p));
-    const aliceGot = nextEvent(alice, 'order.status.changed', (p) => p.id === order.id);
-    const adminGot = nextEvent(admin, 'order.status.changed', (p) => p.id === order.id);
+    const bobEvents: any[] = []; bob.bind_global((name: string, data: any) => { if (!name.startsWith('pusher:')) bobEvents.push(data); });
+    const aliceGot = nextEvent(alice, mine, 'order.status.changed', (p) => p.id === order.id);
+    const adminGot = nextEvent(admin, 'private-admin.orders', 'order.status.changed', (p) => p.id === order.id);
     await request(app.getHttpServer()).patch(`/api/v1/orders/${order.id}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'CONFIRMED' }).expect(200);
     expect((await aliceGot).status).toBe('CONFIRMED');
     expect((await adminGot).status).toBe('CONFIRMED');
     await sleep(300);
     expect(bobEvents).toHaveLength(0);
 
-    const cancelled = nextEvent(alice, 'order.status.changed', (p) => p.id === order.id && p.status === 'CANCELLED');
+    // الإلغاء يصل للزبون، وبعده لا يُسمح باشتراك جديد بهذا الطلب
+    const cancelled = nextEvent(alice, mine, 'order.status.changed', (p) => p.id === order.id && p.status === 'CANCELLED');
     await request(app.getHttpServer()).post(`/api/v1/orders/${order.id}/cancel`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     await cancelled;
-    expect(await alice.emitWithAck('subscribe:order', { orderId: order.id })).toEqual({ ok: true, closed: true });
+    expect((await authChannel(customerAToken, mine).expect(403)).body.code).toBe('ORDER_CLOSED');
   });
 });

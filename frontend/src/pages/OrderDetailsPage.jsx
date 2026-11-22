@@ -49,11 +49,14 @@ function OrderDetailsPage() {
   const role = user ? user.role : "";
   useEffect(() => {
     if (role !== "CUSTOMER") return;
+    // الطلب الملغى: السيرفر يرفض الاشتراك (ORDER_CLOSED) وهذا طبيعي، فلا نعرض خطأ
     const stop = watchOrder(id);
     const off = onRealtime("order.status.changed", (order) => {
       if (order.id !== id) return;
       setResult((r) => (r.order ? { ...r, order: { ...r.order, ...order } } : r));
       setMessage("تم تحديث حالة طلبك: " + statusLabels[order.status]);
+      // انتهى الطلب: ما بقي شيء نتابعه، فنلغي الاشتراك (السيرفر لا يطرد المشتركين بنفسه)
+      if (order.status === "CANCELLED") stop();
     });
     return () => {
       off();

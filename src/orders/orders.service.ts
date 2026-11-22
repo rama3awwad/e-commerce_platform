@@ -13,12 +13,12 @@ import { RecentWritesService } from '../common/cache/recent-writes.service';
 import { setResponseHeader } from '../common/perf/response-headers';
 import { OrderEventsPublisher } from './events/order-events.publisher';
 import { OrderCreatedEvent } from './events/order-created.event';
-import { OrdersGateway } from './realtime/orders.gateway';
+import { PusherService } from './realtime/pusher.service';
 
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
-  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi, private readonly recentWrites: RecentWritesService, private readonly events: OrderEventsPublisher, @Optional() private readonly realtime?: OrdersGateway) {}
+  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi, private readonly recentWrites: RecentWritesService, private readonly events: OrderEventsPublisher, @Optional() private readonly realtime?: PusherService) {}
 
   // المتطلب الثالث: الطلبات لا تُخزّن في Redis (خاصة بكل مستخدم وتتغير حالتها).
   // القراءة من نسخة القراءة، إلا إذا كتب هذا المستخدم شيئاً خلال آخر ثوانٍ → القاعدة الأساسية،

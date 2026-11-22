@@ -12,6 +12,9 @@ services:
       context: .
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_PUSHER_KEY: ${VITE_PUSHER_KEY:-app-key}
+        VITE_PUSHER_HOST: ${VITE_PUSHER_HOST:-localhost}
+        VITE_PUSHER_PORT: ${VITE_PUSHER_PORT:-6001}
     restart: unless-stopped
     ports:
       - "5173:80"
