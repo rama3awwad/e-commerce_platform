@@ -5,8 +5,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EmailJobsController } from './email/email-jobs.controller';
 import { EmailJobsService } from './email/email-jobs.service';
-import { OrdersGateway } from './realtime/orders.gateway';
-import { RealtimeAuthService } from './realtime/realtime-auth.service';
+import { PusherService } from './realtime/pusher.service';
+import { RealtimeAuthController } from './realtime/realtime-auth.controller';
 import { InternalHttpModule } from '../common/internal-http/internal-http.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { OrdersController } from './orders.controller';
@@ -17,4 +17,4 @@ import { ProductsApi } from '../products/api/products.api';
 import { NotificationsApi } from '../notifications/api/notifications.api';
 import { HttpProductsApi } from './clients/http-products.api';
 import { HttpNotificationsApi } from './clients/http-notifications.api';
-@Module({imports:[InventoryModule,InternalHttpModule,MessagingModule,JwtModule.registerAsync({imports:[ConfigModule],inject:[ConfigService],useFactory:(c:ConfigService)=>({secret:c.get<string>('JWT_SECRET')})})],controllers:[OrdersController,InternalOrdersController,EmailJobsController],providers:[OrdersService,OrdersPrismaService,OrderEventsPublisher,OrdersGateway,RealtimeAuthService,EmailJobsService,{provide:ProductsApi,useClass:HttpProductsApi},{provide:NotificationsApi,useClass:HttpNotificationsApi}]}) export class OrdersModule {}
+@Module({imports:[InventoryModule,InternalHttpModule,MessagingModule,JwtModule.registerAsync({imports:[ConfigModule],inject:[ConfigService],useFactory:(c:ConfigService)=>({secret:c.get<string>('JWT_SECRET')})})],controllers:[OrdersController,InternalOrdersController,EmailJobsController,RealtimeAuthController],providers:[OrdersService,OrdersPrismaService,OrderEventsPublisher,PusherService,EmailJobsService,{provide:ProductsApi,useClass:HttpProductsApi},{provide:NotificationsApi,useClass:HttpNotificationsApi}]}) export class OrdersModule {}
