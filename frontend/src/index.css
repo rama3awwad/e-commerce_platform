@@ -841,3 +841,83 @@ img {
 .test-stock {
   font-weight: 700;
 }
+
+/* ===== المتطلب الرابع: التحديثات اللحظية ومراقبة الإيميلات ===== */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--canvas);
+  color: var(--muted);
+}
+.live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-connected {
+  background: var(--green-light);
+  color: var(--green);
+}
+.live-connected .live-dot {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+.live-connecting {
+  background: var(--amber-light);
+  color: var(--amber);
+}
+.live-error {
+  background: var(--red-light);
+  color: var(--red);
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* الطلب الجديد يومض ليلفت انتباه الأدمن */
+.order-new {
+  animation: order-flash 2.5s ease-out;
+  border: 2px solid var(--violet);
+}
+@keyframes order-flash {
+  0% { background: var(--violet-light); }
+  100% { background: var(--white); }
+}
+
+/* حالات الـ email jobs */
+.badge-QUEUED {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+.badge-RETRYING {
+  background: var(--amber-light);
+  color: var(--amber);
+}
+.badge-SENT {
+  background: var(--green-light);
+  color: var(--green);
+}
+.badge-DEAD {
+  background: var(--red-light);
+  color: var(--red);
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.log-list li {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+.log-ok { color: var(--green); }
+.log-rejected { color: var(--red); }

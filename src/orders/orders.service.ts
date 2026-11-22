@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { OrderStatus, Prisma, PrismaClient } from '.prisma/orders-client';
 import { Role } from '../common/enums/role.enum';
 import { OrdersPrismaService } from './prisma/orders-prisma.service';
@@ -11,11 +11,14 @@ import { canTransition } from './order-transitions';
 import { randomUUID } from 'crypto';
 import { RecentWritesService } from '../common/cache/recent-writes.service';
 import { setResponseHeader } from '../common/perf/response-headers';
+import { OrderEventsPublisher } from './events/order-events.publisher';
+import { OrderCreatedEvent } from './events/order-created.event';
+import { OrdersGateway } from './realtime/orders.gateway';
 
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
-  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi, private readonly recentWrites: RecentWritesService) {}
+  constructor(private readonly prisma: OrdersPrismaService, @Inject(INVENTORY_PORT) private readonly inventory: InventoryPort, private readonly products: ProductsApi, private readonly notifications: NotificationsApi, private readonly recentWrites: RecentWritesService, private readonly events: OrderEventsPublisher, @Optional() private readonly realtime?: OrdersGateway) {}
 
   // المتطلب الثالث: الطلبات لا تُخزّن في Redis (خاصة بكل مستخدم وتتغير حالتها).
   // القراءة من نسخة القراءة، إلا إذا كتب هذا المستخدم شيئاً خلال آخر ثوانٍ → القاعدة الأساسية،
@@ -26,12 +29,13 @@ export class OrdersService {
     return usePrimary ? this.prisma : this.prisma.readClient;
   }
 
-  async create(userId: string, dto: CreateOrderDto) {
+  async create(userId: string, dto: CreateOrderDto, email?: string) {
     const products = await this.products.findActiveByIds(dto.items.map((i) => i.productId));
     if (products.length !== dto.items.length) throw new NotFoundException({ code: 'NOT_FOUND', message: 'One or more products do not exist or are inactive' });
     const reserveItems = dto.items.map(({ productId, quantity }) => ({ productId, quantity }));
     const id = randomUUID();
     let reserved = false;
+    let event: OrderCreatedEvent | undefined;
     try {
       const result = await this.inventory.reserve(id, reserveItems);
       if (!result.success) throw new CodedException(409, 'INSUFFICIENT_STOCK', 'Insufficient inventory for one or more products', result.insufficient);
@@ -41,9 +45,22 @@ export class OrdersService {
       const order = await this.prisma.$transaction(async (tx) => {
         const totalAmount = dto.items.reduce((sum, item) => { const p = products.find((x) => x.id === item.productId)!; return sum.plus(new Prisma.Decimal(p.price).mul(item.quantity)); }, new Prisma.Decimal(0));
         const created = await tx.order.create({ data: { id, userId, totalAmount, items: { create: dto.items.map((item) => { const p = products.find((x) => x.id === item.productId)!; return { productId: p.id, quantity: item.quantity, unitPrice: new Prisma.Decimal(p.price) }; }) } }, include: { items: true } });
+        // المتطلب الرابع (Outbox): حدث الإيميل يُحفظ بنفس transaction الطلب، فإما يُحفظان معاً أو لا شيء.
+        if (email) {
+          const jobId = randomUUID();
+          event = {
+            jobId, orderId: created.id, orderNumber: created.orderNumber, userId, to: email,
+            totalAmount: totalAmount.toFixed(2),
+            items: created.items.map((i) => ({ productId: i.productId, name: products.find((p) => p.id === i.productId)?.name ?? i.productId, quantity: i.quantity, unitPrice: i.unitPrice.toFixed(2) })),
+            createdAt: created.createdAt.toISOString(),
+          };
+          await tx.emailJob.create({ data: { id: jobId, orderId: created.id, recipient: email, payload: event as unknown as Prisma.InputJsonValue } });
+        }
         return created;
       });
       await this.recentWrites.mark(`orders:user:${userId}`);
+      await this.publishSafely(event);
+            this.realtime?.emitOrderCreated(order); // المتطلب الرابع: لوحة الأدمن تتحدث فوراً
       await this.notifySafely(userId, 'ORDER_CREATED', 'Order created', `Order #${order.orderNumber} was created.`);
       return order;
     } catch (error) {
@@ -82,6 +99,7 @@ export class OrdersService {
       return tx.order.findUnique({ where: { id }, include: { items: true } });
     });
     await this.recentWrites.mark(`orders:user:${order.userId}`, `orders:user:${requester.id}`);
+        if (updated) this.realtime?.emitOrderStatusChanged(updated); // المتطلب الرابع: صفحة الزبون ولوحة الأدمن تتحدثان فوراً
     await this.notifySafely(order.userId, 'ORDER_STATUS_CHANGED', 'Order status changed', `Order #${order.orderNumber} is now ${status}.`);
     // Commit the database transition first; reconcile logged release failures manually.
     if (status === OrderStatus.CANCELLED && updated) {
@@ -91,6 +109,8 @@ export class OrdersService {
     }
     return updated;
   }
+    // النشر لا يُفشل الطلب أبداً: لو RabbitMQ واقع يبقى الـ job بحالة QUEUED ويعيد نشره الـ OutboxRelay في الـ Worker.
+  private async publishSafely(event?: OrderCreatedEvent) { if (!event) return; try { await this.events.publishOrderCreated(event); } catch (e) { this.logger.error(`Publishing order.created failed for order ${event.orderId}; relay will retry`, e instanceof Error ? e.stack : undefined); } }
   private async notifySafely(userId: string, type: string, title: string, message: string) { try { await this.notifications.notify({ userId, type, title, message }); } catch (e) { this.logger.error(`Notification failed: ${type} for ${userId}`, e instanceof Error ? e.stack : undefined); } }
   cancel(id: string, requester: { id: string; role: Role }) { return this.changeStatus(id, OrderStatus.CANCELLED, requester, true); }
 }
