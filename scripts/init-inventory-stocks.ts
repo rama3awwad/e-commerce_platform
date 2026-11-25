@@ -10,16 +10,20 @@
  * 
  * استخدم هذا السكربت بعد أول تشغيل لـseed، أو بعد استيراد بيانات تجريبية جديدة.
  */
-import { PrismaClient } from '../node_modules/.prisma/products-client';
+import { PrismaClient } from '.prisma/products-client';
 import * as path from 'path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 
-const PROTO_PATH = path.join(__dirname, '../proto/inventory.proto');
-const INVENTORY_URL = process.env.INVENTORY_GRPC_URL || 'localhost:9090';
+const PROTO_PATH = path.join(__dirname, '../src/inventory/proto/inventory.proto');
+const INVENTORY_URL = process.env.INVENTORY_GRPC_URL || 'inventory-service:9090';
 const DEFAULT_STOCK = Number(process.env.STUB_DEFAULT_STOCK || 50);
 
 interface InventoryClient {
+  getStock(
+    req: { productId: string },
+    cb: (err: grpc.ServiceError | null, res: { productId: string; available: number }) => void,
+  ): void;
   setStock(
     req: { productId: string; quantity: number },
     cb: (err: grpc.ServiceError | null, res: { success: boolean; available: number }) => void,
@@ -45,13 +49,20 @@ async function main() {
   const prisma = new PrismaClient();
   
   try {
-    const products = await prisma.product.findMany({ select: { id: true, name: true } });
+    const products = await prisma.product.findMany({ where: { imageUrl: { startsWith: 'https://images.unsplash.com/' } }, select: { id: true, name: true } });
     console.log('Found', products.length, 'products in ecommerce_db');
     
     let success = 0;
     let failed = 0;
     
     for (const p of products) {
+      const stock = await new Promise<number>((resolve, reject) => {
+        client.getStock({ productId: p.id }, (err, res) => err ? reject(err) : resolve(res.available));
+      });
+      if (stock > 0) {
+        console.log('SKIP ', p.name, '→ stock already exists:', stock);
+        continue;
+      }
       await new Promise<void>((resolve) => {
         client.setStock({ productId: p.id, quantity: DEFAULT_STOCK }, (err, res) => {
           if (err || !res.success) {
@@ -69,7 +80,9 @@ async function main() {
     console.log('\n========================================');
     console.log('Result: ' + success + ' succeeded, ' + failed + ' failed');
     console.log('========================================');
+    if (failed) throw new Error(`Could not initialize inventory for ${failed} seed product(s)`);
   } finally {
+    (client as any).close();
     await prisma.$disconnect();
   }
 }

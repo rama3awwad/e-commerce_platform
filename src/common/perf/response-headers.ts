@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import type { NextFunction, Request, Response } from 'express';
+import { hostname } from 'os';
 
 /**
  * المتطلب الثالث: نحفظ الـresponse الحالي في AsyncLocalStorage حتى تستطيع الخدمات
@@ -8,8 +9,10 @@ import type { NextFunction, Request, Response } from 'express';
  *   X-Read-Source: replica | primary          (من أي قاعدة قرأنا؟)
  */
 const storage = new AsyncLocalStorage<Response>();
+const INSTANCE_ID = process.env.INSTANCE_ID || hostname();
 
 export function responseHeadersMiddleware(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('X-Instance-Id', INSTANCE_ID);
   storage.run(res, next);
 }
 

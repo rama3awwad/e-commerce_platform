@@ -8,6 +8,11 @@ spring:
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:1000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT_MS:500}
 
   jpa:
     hibernate:
@@ -41,4 +46,4 @@ logging:
   level:
     com.store.inventory: ${LOG_LEVEL:DEBUG}
     org.hibernate.SQL: ${SQL_LOG_LEVEL:DEBUG}
-    org.hibernate.orm.jdbc.bind: TRACE
+    org.hibernate.orm.jdbc.bind: ${SQL_BIND_LOG_LEVEL:WARN}

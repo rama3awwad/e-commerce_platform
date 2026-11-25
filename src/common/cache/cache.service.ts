@@ -151,6 +151,29 @@ export class CacheService implements OnModuleDestroy {
     };
   }
 
+  async getJson<T>(key: string): Promise<T | null> {
+    if (!this.redis) return null;
+    try {
+      const value = await this.redis.get(key);
+      return value === null ? null : JSON.parse(value) as T;
+    } catch (err) {
+      this.logger.warn(`Redis JSON read failed for ${key}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    if (!this.redis) return;
+    try { await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds); }
+    catch (err) { this.logger.warn(`Redis JSON write failed for ${key}: ${(err as Error).message}`); }
+  }
+
+  async del(key: string): Promise<void> {
+    if (!this.redis) return;
+    try { await this.redis.del(key); }
+    catch (err) { this.logger.warn(`Redis delete failed for ${key}: ${(err as Error).message}`); }
+  }
+
   async flush() {
     this.hits = 0;
     this.misses = 0;

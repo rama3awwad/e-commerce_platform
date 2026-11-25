@@ -40,4 +40,7 @@ public interface StockItemRepository extends JpaRepository<StockItem, String> {
     List<StockItem> lockByProductIds(@Param("ids") List<String> productIds);
 
     Optional<StockItem> findByProductId(String productId);
+
+    @Query("SELECT s FROM StockItem s WHERE s.productId IN :ids")
+    List<StockItem> findAllByProductIds(@Param("ids") List<String> productIds);
 }

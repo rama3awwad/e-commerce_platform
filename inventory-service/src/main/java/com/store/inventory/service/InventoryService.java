@@ -68,7 +68,7 @@ public class InventoryService {
             return result;
         }
         productIds.forEach(id -> result.put(id, 0));
-        stockRepo.findAllById(productIds)
+        stockRepo.findAllByProductIds(productIds)
                 .forEach(item -> result.put(item.getProductId(), item.getQuantity()));
         return result;
     }
@@ -137,11 +137,12 @@ public class InventoryService {
         }
 
         // 3) التحقق من توفر الكمية لكل المنتجات قبل الخصم (all-or-nothing)
+        List<String> productIds = items.stream().map(ReservationItem::getProductId).distinct().toList();
+        Map<String, Integer> availableById = new HashMap<>();
+        stockRepo.findAllByProductIds(productIds).forEach(item -> availableById.put(item.getProductId(), item.getQuantity()));
         List<ShortageItem> shortages = new ArrayList<>();
         for (ReservationItem it : items) {
-            int available = stockRepo.findByProductId(it.getProductId())
-                    .map(StockItem::getQuantity)
-                    .orElse(0);
+            int available = availableById.getOrDefault(it.getProductId(), 0);
             if (available < it.getQuantity()) {
                 shortages.add(new ShortageItem(it.getProductId(), it.getQuantity(), available));
             }

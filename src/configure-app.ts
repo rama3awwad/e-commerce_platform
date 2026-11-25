@@ -19,9 +19,20 @@ export function configureApp(app: INestApplication) {
   // المتطلب الثالث: headers تشخيصية (X-Cache, X-Read-Source) + ETag.
   // نعطل ETag الافتراضي في Express ونحسب بصمتنا على data فقط (انظر EtagInterceptor).
   app.use(responseHeadersMiddleware);
+    // Identify which backend instance handled the request.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader(
+      'X-Instance-Id',
+      process.env.INSTANCE_ID ?? 'unknown',
+    );
+
+    next();
+  });
+
   (app.getHttpAdapter().getInstance() as express.Express).set('etag', false);
+  (app.getHttpAdapter().getInstance() as express.Express).set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
   app.use(helmet());
-  app.enableCors({ origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((x) => x.trim()), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'If-None-Match'], exposedHeaders: ['ETag', 'X-Cache', 'X-Read-Source'], credentials: true });
+  app.enableCors({ origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((x) => x.trim()), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'If-None-Match'], exposedHeaders: ['ETag', 'X-Cache', 'X-Read-Source', 'X-Instance-Id', 'X-Upstream'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
   app.useGlobalFilters(new AllExceptionsFilter());
   // الترتيب مهم: EtagInterceptor داخلي فيرى data قبل أن يغلفها TransformInterceptor بـtimestamp.
