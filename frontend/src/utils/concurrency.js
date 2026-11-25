@@ -36,3 +36,12 @@ export function summarizeResults(outcomes, stockBefore, quantity, stockAfter) {
     stockConsistent,
   };
 }
+
+export function countByInstance(outcomes) {
+  const counts = {};
+  for (const outcome of outcomes) {
+    const key = outcome.instance || "unknown";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}

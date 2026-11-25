@@ -43,7 +43,11 @@ x-backend: &backend
     READ_YOUR_WRITES_WINDOW_MS: ${READ_YOUR_WRITES_WINDOW_MS:-5000}
     PRODUCTS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
     ORDERS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
-    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672"
+    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-app}:${RABBITMQ_PASSWORD:-app-secret}@rabbitmq:5672"
+    RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    RABBITMQ_USER: ${RABBITMQ_USER:-app}
+    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-app-secret}
+    BACKEND_INSTANCES: "backend-1:3000,backend-2:3000,backend-3:3000"
     RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
     PUSHER_APP_ID: ${PUSHER_APP_ID:-app-id}
     PUSHER_APP_KEY: ${PUSHER_APP_KEY:-app-key}
@@ -74,7 +78,7 @@ x-worker: &worker
   environment: &worker-env
     NODE_ENV: ${NODE_ENV:-production}
     ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
-    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672"
+    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-app}:${RABBITMQ_PASSWORD:-app-secret}@rabbitmq:5672"
     RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
     MAIL_DRIVER: ${MAIL_DRIVER:-log}
     MAIL_FORCE_FAIL: ${MAIL_FORCE_FAIL:-false}
@@ -223,8 +227,8 @@ services:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-app-secret}
     ports:
       - "5672:5672"
       - "15672:15672"

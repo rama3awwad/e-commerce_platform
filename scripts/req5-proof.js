@@ -4,6 +4,7 @@
  * المتطلب الخامس — إثبات التوزيع والاستمرارية.
  *   node scripts/req5-proof.js --total 500 --concurrency 10
  *   node scripts/req5-proof.js --total 4000 --concurrency 10 --stop backend-2 --stop-after 300
+ *  node scripts/req5-proof.js --total 500 --concurrency 30 --orders 500
  * بيانات الدخول من PROOF_USER و PROOF_PASS (الافتراضي customer@test.com / Admin@123).
  * مراحل الاختبار تُصنَّف بوقت "بدء" الطلب لا بوقت اكتماله:
  *   before   : بدأ قبل إصدار أمر الإيقاف

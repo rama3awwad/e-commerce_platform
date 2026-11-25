@@ -2,18 +2,19 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EmailJobStatus } from '.prisma/orders-client';
 import { CodedException } from '../../common/exceptions/coded.exception';
-import { parseRetryDelays } from '../../common/messaging/messaging.constants';
+import { parseRetryDelays, QUEUES } from '../../common/messaging/messaging.constants';
 import { OrdersPrismaService } from '../prisma/orders-prisma.service';
 import { OrderEventsPublisher } from '../events/order-events.publisher';
 import { OrderCreatedEvent } from '../events/order-created.event';
 
 export const FORCE_FAIL_FLAG = 'mail.forceFail';
+const fetchFn = globalThis.fetch;
 
 /** شاشة مراقبة الإيميلات للأدمن (المتطلب الرابع): الحالات، المحاولات، الـ DLQ، وإعادة المعالجة. */
 @Injectable()
 export class EmailJobsService {
   private readonly maxAttempts: number;
-  constructor(private readonly prisma: OrdersPrismaService, private readonly publisher: OrderEventsPublisher, config: ConfigService) {
+  constructor(private readonly prisma: OrdersPrismaService, private readonly publisher: OrderEventsPublisher, private readonly config: ConfigService) {
     this.maxAttempts = parseRetryDelays(config.get<string>('RETRY_DELAYS_MS')).length + 1;
   }
 
@@ -29,10 +30,36 @@ export class EmailJobsService {
     for (const g of grouped) counts[g.status] = g._count._all;
     const items = rows.map((j) => ({
       id: j.id, orderId: j.orderId, orderNumber: (j.payload as unknown as OrderCreatedEvent).orderNumber, recipient: j.recipient,
-      status: j.status, attempts: j.attempts, maxAttempts: this.maxAttempts, lastError: j.lastError, publishedAt: j.publishedAt, sentAt: j.sentAt, createdAt: j.createdAt,
+      status: j.status, attempts: j.attempts, maxAttempts: this.maxAttempts, lastError: j.lastError, processedBy: j.processedBy, publishedAt: j.publishedAt, sentAt: j.sentAt, createdAt: j.createdAt,
     }));
     const totalPages = Math.ceil(total / limit);
     return { items, counts, meta: { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
+  }
+
+  async workersOverview() {
+    const [grouped, queue] = await Promise.all([
+      this.prisma.emailJob.groupBy({ by: ['processedBy'], where: { processedBy: { not: null } }, _count: { _all: true }, _max: { updatedAt: true } }),
+      this.fetchQueueStats(),
+    ]);
+    const byWorker = grouped.map((g) => ({ worker: g.processedBy as string, processed: g._count._all, lastActivityAt: g._max.updatedAt })).sort((a, b) => a.worker.localeCompare(b.worker));
+    return { queue, byWorker };
+  }
+
+  private async fetchQueueStats() {
+    const base = this.config.get<string>('RABBITMQ_MANAGEMENT_URL', 'http://rabbitmq:15672');
+    const user = this.config.get<string>('RABBITMQ_USER', 'guest');
+    const pass = this.config.get<string>('RABBITMQ_PASSWORD', 'guest');
+    try {
+      const res = await fetchFn(`${base}/api/queues/%2F/${encodeURIComponent(QUEUES.EMAIL)}`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}` },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!res.ok) return { available: false as const, reason: `RabbitMQ management returned HTTP ${res.status}` };
+      const q = await res.json() as { consumers?: number; messages_ready?: number; messages_unacknowledged?: number };
+      return { available: true as const, consumers: q.consumers ?? 0, messagesReady: q.messages_ready ?? 0, messagesUnacknowledged: q.messages_unacknowledged ?? 0 };
+    } catch (e) {
+      return { available: false as const, reason: (e as Error).message };
+    }
   }
 
   /** إعادة معالجة رسالة من الـ DLQ: نصفّر الـ job وننشره من جديد (لو فشل النشر يعيده الـ relay). */

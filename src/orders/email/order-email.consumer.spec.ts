@@ -30,6 +30,15 @@ describe('OrderEmailConsumer', () => {
     expect(d.ack).toHaveBeenCalledTimes(1);
   });
 
+  it('records which worker processed the job', async () => {
+    const { consumer, prisma } = setup();
+    await consumer.handle(delivery());
+    expect(prisma.emailJob.update).toHaveBeenCalledWith({
+      where: { id: 'j1' },
+      data: expect.objectContaining({ status: 'SENT', processedBy: expect.any(String) }),
+    });
+  });
+
   it('moves the first failure to the 30s retry queue', async () => {
     const { consumer, rabbit, prisma } = setup({ sendFails: true }); const d = delivery(0);
     await consumer.handle(d);

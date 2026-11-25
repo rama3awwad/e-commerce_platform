@@ -1,11 +1,15 @@
 // اختبارات تلخيص نتائج اختبار التزامن + إعادة المحاولة
 import test from "node:test";
 import assert from "node:assert/strict";
-import { summarizeResults } from "../src/utils/concurrency.js";
+import { summarizeResults, countByInstance } from "../src/utils/concurrency.js";
 import { isRetryable } from "../src/api/errors.js";
 
 const ok = { ok: true };
 const noStock = { ok: false, code: "INSUFFICIENT_STOCK" };
+
+test("countByInstance groups responses and includes unknown identities", () => {
+  assert.deepEqual(countByInstance([{ instance: "backend-1" }, { instance: "backend-2" }, { instance: "backend-1" }, {}]), { "backend-1": 2, "backend-2": 1, unknown: 1 });
+});
 
 test("آخر قطعة: ينجح طلب واحد والباقي ينرفض = نتيجة صحيحة", () => {
   const s = summarizeResults([ok, noStock, noStock, noStock, noStock], 1, 1, 0);

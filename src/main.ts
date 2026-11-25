@@ -6,7 +6,6 @@ import { configureApp } from './configure-app';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   configureApp(app);
- // app.enableShutdownHooks();
   const port = Number(process.env.PORT || 3000);
   await app.listen(port);
 const logger = new Logger('Bootstrap');
@@ -19,8 +18,8 @@ const shutdown = async (signal: string) => {
   const force = setTimeout(() => { logger.error('Forced exit after 8s'); process.exit(1); }, 8000);
   force.unref();
   try {
-    await new Promise<void>((resolve) => server.close(() => resolve())); // يوقف الاستقبال وينتظر الجارية
-    await app.close();                                                   // بعدها Prisma/Redis/RabbitMQ
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await app.close();
     process.exit(0);
   } catch (e) { logger.error(`Shutdown failed: ${(e as Error).message}`); process.exit(1); }
 };

@@ -16,18 +16,8 @@ import { responseHeadersMiddleware } from './common/perf/response-headers';
 
 
 export function configureApp(app: INestApplication) {
-  // المتطلب الثالث: headers تشخيصية (X-Cache, X-Read-Source) + ETag.
-  // نعطل ETag الافتراضي في Express ونحسب بصمتنا على data فقط (انظر EtagInterceptor).
+  // Diagnostic response headers and ETag support.
   app.use(responseHeadersMiddleware);
-    // Identify which backend instance handled the request.
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    res.setHeader(
-      'X-Instance-Id',
-      process.env.INSTANCE_ID ?? 'unknown',
-    );
-
-    next();
-  });
 
   (app.getHttpAdapter().getInstance() as express.Express).set('etag', false);
   (app.getHttpAdapter().getInstance() as express.Express).set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));

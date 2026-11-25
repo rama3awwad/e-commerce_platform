@@ -2,35 +2,36 @@
 
 ## Route and access
 
-Open `/admin/scalability` while signed in as an administrator. The API is mounted at `/api/v1/admin/scalability-tests` and requires the existing administrator JWT guard.
+Open `/admin/scalability` while signed in as an administrator. Its API is mounted at `/api/v1/admin/scalability` and requires the administrator JWT guard.
 
 ## Run the application
 
-From the repository root, start the existing compose stack with `docker compose up --build -d`. Start the frontend from `frontend` with `npm install` once and `npm run dev`; open the Vite URL and sign in with an administrator account. The dashboard calls the public API origin configured by `VITE_API_URL` (defaults to `http://localhost:3000`), which is the Nginx load balancer in the compose setup.
+From the repository root, start the compose stack with `docker compose up --build -d`. Start the frontend from `frontend` with `npm run dev`; open the Vite URL and sign in as an administrator. The dashboard uses the public API origin configured by `VITE_API_URL` (defaults to `http://localhost:3000`) and sends measured requests through Nginx.
 
 ## Load balancing
 
-Choose `GET /health` or `GET /products`, configure 1–5,000 requests and concurrency 1–100, then start the test. Every measured request is issued by the browser to the configured public API origin. Status, latency, timestamp, `X-Instance-Id`, and `X-Upstream` are captured from each response. The API stores run history in memory; it is cleared when all backend processes restart. A run that does not observe all three IDs is evidence of that distribution, not a fabricated pass.
+Choose `GET /health` or `GET /products`, configure 1–5,000 requests and concurrency 1–100, then start the test. The browser records status, latency, timestamp, and `X-Instance-Id` from real responses. Test results are computed in the browser and exported as JSON/CSV; the server keeps no test state so requests can reach any backend instance.
 
 ## Backend failover and recovery
 
-Start monitoring and a probe stream. Record the baseline after seeing all healthy backends receive probes. Use Docker Desktop or PowerShell to stop `backend-2`, then select **I stopped the container**. Continue probes while it is unavailable. Restart `backend-2` manually and select **I restarted the container** after it is running. Health polling observes the public Nginx health endpoint; the request distribution and comparisons use actual probe responses. Dashboard buttons only record the user's action.
-
-Manual PowerShell commands from the repository root:
+Keep a probe stream running. Record the baseline, stop `backend-2`, record the outage, restart it, and record recovery. The dashboard compares responses from each phase and polls `GET /api/v1/admin/scalability/instances`, which probes each backend directly over the Docker network. Dashboard buttons record the operator's checkpoints; they do not control containers.
 
 ```powershell
 docker compose stop backend-2
 docker compose start backend-2
+docker compose exec lb nginx -s reload
 ```
 
-## Worker scenarios: unavailable
+Nginx resolves backend addresses at startup, so reload it after a restarted container receives a new IP.
 
-Worker execution is intentionally disabled. The configured `order.email` queue contains real customer email jobs, and the repository does not configure a separate test queue, worker heartbeats, per-worker processing telemetry, or a queue-stats API. Do not publish test messages to `order.email`. The existing RabbitMQ management port alone is not enough to safely identify application-level worker processing through the authenticated application dashboard. Implementing the worker modules requires a dedicated durable test queue and isolated worker test instrumentation first.
+## Worker evidence
+
+The email monitor at `/admin/async-monitor` shows the `processedBy` worker recorded for each email job, the number of jobs last processed by each worker, and the live consumer count and queue depth from RabbitMQ's management API. A job records its most recent processing worker, not a full per-attempt audit trail.
 
 ## Collected values and limitations
 
-- Load balancing: totals, successes, failures, success rate, throughput, average and percentile latency, and per-instance counts are computed from recorded responses.
-- Backend health: direct browser probes to the public `/api/v1/health` URL indicate whether Nginx can serve a health request; they do not prove the health of each backend separately.
-- Nginx's `X-Upstream` header is available on actual probe responses when CORS exposes it; the current response list may identify unknown instance when a request fails before receiving a backend response.
-- Worker consumer counts, ready/unacknowledged depth, redeliveries, worker identity, processing counters, and worker recovery duration are unavailable until safe test queue instrumentation is added.
-- Results persist only in backend process memory. JSON and CSV downloads are available in the dashboard.
+- Load balancing: requests, successes, failures, success rate, throughput, average and percentile latency, and per-instance counts come from measured responses.
+- Backend health is checked separately for each backend from inside the Docker network.
+- Unknown instance counts include requests that failed before a backend response was available.
+- Dashboard results remain in the browser tab. Export JSON/CSV before closing it.
+- PostgreSQL, Redis, RabbitMQ, and inventory are shared services and can limit throughput.

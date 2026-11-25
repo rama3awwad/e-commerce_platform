@@ -10,6 +10,7 @@ const jobLabels = {
   SENT: "أُرسل",
   DEAD: "فشل نهائي (DLQ)",
 };
+const WORKERS = ["worker-1", "worker-2", "worker-3"];
 
 // مراقبة الإيميلات (المتطلب الرابع): حالة كل رسالة، عدد المحاولات، الـ DLQ، وإعادة المعالجة
 function AdminAsyncMonitorPage() {
@@ -20,6 +21,7 @@ function AdminAsyncMonitorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [workers, setWorkers] = useState(null);
 
   // تحديث تلقائي كل 3 ثواني: بتشوف الحالة تتغير (بالانتظار، ثم إعادة محاولة، ثم DLQ) بدون Refresh
   useEffect(() => {
@@ -52,6 +54,18 @@ function AdminAsyncMonitorPage() {
       .get("/admin/email-jobs/settings")
       .then((res) => setForceFail(res.data.data.forceFail))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    function load() {
+      api.get("/admin/email-jobs/workers")
+        .then((res) => { if (!ignore) setWorkers(res.data.data); })
+        .catch(() => {});
+    }
+    load();
+    const timer = setInterval(load, 4000);
+    return () => { ignore = true; clearInterval(timer); };
   }, []);
 
   function chooseStatus(value) {
@@ -117,6 +131,22 @@ function AdminAsyncMonitorPage() {
         </div>
       </div>
 
+      <div className="card" style={{ marginBottom: 16 }}>
+        <strong>الـ Workers (طابور order.email)</strong>
+        {workers && workers.queue.available ? (
+          <div className="muted" style={{ margin: "6px 0 12px" }}>
+            Consumers نشطين الآن: <strong>{workers.queue.consumers}</strong> / {WORKERS.length} · بالانتظار: {workers.queue.messagesReady} · قيد المعالجة: {workers.queue.messagesUnacknowledged}
+          </div>
+        ) : <div className="muted" style={{ margin: "6px 0 12px" }}>تعذّرت قراءة RabbitMQ: {workers ? workers.queue.reason : "..."}</div>}
+        <div className="table-wrap"><table className="table">
+          <thead><tr><th>الـ Worker</th><th>رسائل عالجها</th><th>آخر نشاط</th></tr></thead>
+          <tbody>{WORKERS.map((name) => {
+            const row = workers && workers.byWorker.find((worker) => worker.worker === name);
+            return <tr key={name}><td>{name}</td><td>{row ? row.processed : 0}</td><td className="muted">{row && row.lastActivityAt ? formatDate(row.lastActivityAt) : "-"}</td></tr>;
+          })}</tbody>
+        </table></div>
+      </div>
+
       <div className="chips">
         <button className={"chip" + (status === "" ? " active" : "")} onClick={() => chooseStatus("")}>
           الكل
@@ -143,6 +173,7 @@ function AdminAsyncMonitorPage() {
                 <th>المستلم</th>
                 <th>الحالة</th>
                 <th>المحاولات</th>
+                <th>عولج بواسطة</th>
                 <th>آخر خطأ</th>
                 <th>التاريخ</th>
                 <th></th>
@@ -159,6 +190,7 @@ function AdminAsyncMonitorPage() {
                   <td>
                     {job.attempts} / {job.maxAttempts}
                   </td>
+                  <td>{job.processedBy || "-"}</td>
                   <td className="muted">{job.lastError || "-"}</td>
                   <td className="muted">{formatDate(job.createdAt)}</td>
                   <td>

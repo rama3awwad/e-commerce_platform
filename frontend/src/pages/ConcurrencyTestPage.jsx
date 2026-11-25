@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
 import { getErrorMessage } from "../api/errors";
-import { summarizeResults } from "../utils/concurrency";
+import { summarizeResults, countByInstance } from "../utils/concurrency";
 
 // نجيب الكمية الحالية للمنتج (مصدرها خدمة المستودع)
 async function fetchStock(productId) {
@@ -20,6 +20,7 @@ async function sendOneOrder(productId, quantity) {
       ok: true,
       orderId: res.data.data.id,
       orderNumber: res.data.data.orderNumber,
+      instance: res.headers["x-instance-id"] || "",
       ms: Date.now() - start,
     };
   } catch (err) {
@@ -28,6 +29,7 @@ async function sendOneOrder(productId, quantity) {
       ok: false,
       code: (data && data.code) || "",
       message: getErrorMessage(err),
+      instance: (err.response && err.response.headers && err.response.headers["x-instance-id"]) || "",
       ms: Date.now() - start,
     };
   }
@@ -109,6 +111,7 @@ function ConcurrencyTestPage() {
         stockBefore: stockBefore,
         stockAfter: stockAfter,
         quantity: quantity,
+        byInstance: countByInstance(outcomes),
         summary: summarizeResults(outcomes, stockBefore, quantity, stockAfter),
       });
     } catch (err) {
@@ -192,11 +195,11 @@ function ConcurrencyTestPage() {
               className="input"
               type="number"
               min="2"
-              max="20"
+              max="50"
               value={count}
               onChange={(e) => {
                 const n = Number(e.target.value);
-                setCount(Math.max(2, Math.min(n || 2, 20)));
+                setCount(Math.max(2, Math.min(n || 2, 50)));
               }}
               disabled={running}
             />
@@ -278,6 +281,12 @@ function ConcurrencyTestPage() {
             )}
           </p>
 
+          <p style={{ marginBottom: 12 }}>
+            توزيع الطلبات على السيرفرات: {Object.entries(results.byInstance).map(([name, n]) => (
+              <span key={name} className="badge badge-SENT" style={{ marginInlineStart: 6 }}>{name}: {n}</span>
+            ))}
+          </p>
+
           <div className="table-wrap" style={{ marginBottom: 16 }}>
             <table className="table">
               <thead>
@@ -285,6 +294,7 @@ function ConcurrencyTestPage() {
                   <th>#</th>
                   <th>النتيجة</th>
                   <th>التفاصيل</th>
+                  <th>السيرفر</th>
                   <th>الزمن</th>
                 </tr>
               </thead>
@@ -306,6 +316,7 @@ function ConcurrencyTestPage() {
                         ? "طلب رقم #" + o.orderNumber + (o.cancelled ? " (تم إلغاؤه)" : "")
                         : o.message}
                     </td>
+                    <td>{o.instance || "-"}</td>
                     <td>{o.ms} ms</td>
                   </tr>
                 ))}

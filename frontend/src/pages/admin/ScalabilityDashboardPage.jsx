@@ -1,22 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../../api/client";
 import "./scalability-dashboard.css";
 
+const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const BACKENDS = ["backend-1", "backend-2", "backend-3"];
 const MODULES = [
-  { id: "load", title: "Load balancing", eyebrow: "01 / TRAFFIC", description: "Measure real request distribution through Nginx using backend response headers.", purpose: "Verify that healthy backend instances receive traffic through the configured load balancer." },
-  { id: "failover", title: "Backend failover", eyebrow: "02 / RESILIENCE", description: "Keep safe GET probes running while you stop one backend manually.", purpose: "Observe whether the remaining backends continue serving requests." },
-  { id: "recovery", title: "Backend recovery", eyebrow: "03 / RECOVERY", description: "Compare traffic before failure, during the outage, and after the backend rejoins.", purpose: "Measure actual health detection and first successful request after recovery." },
-  { id: "workers", title: "Worker resilience", eyebrow: "04 / QUEUE", description: "Worker processing probes require a dedicated non-business test queue and telemetry.", purpose: "Verify that queue consumption continues while workers are stopped." },
-  { id: "individual", title: "Individual worker recovery", eyebrow: "05 / WORKERS", description: "Independent worker scenarios will be enabled after safe test-message instrumentation is available.", purpose: "Prove each named worker can stop and resume without affecting the others." },
+  { id: "load", title: "Load balancing", eyebrow: "01 / TRAFFIC", description: "Measure how Nginx distributes real requests, using the X-Instance-Id response header.", purpose: "Verify that every healthy backend instance receives traffic." },
+  { id: "failover", title: "Failover & recovery", eyebrow: "02 / RESILIENCE", description: "Keep a probe stream running while you stop and restart one backend manually.", purpose: "Compare traffic before, during and after the outage." },
 ];
 
-function download(name, content, type) { const url = URL.createObjectURL(new Blob([content], { type })); const link = document.createElement("a"); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url); }
-function summarize(probes = []) {
-  const out = Object.fromEntries(BACKENDS.map((name) => [name, 0]));
-  probes.forEach((probe) => { if (probe.instance in out) out[probe.instance] += 1; });
-  const ok = probes.filter((probe) => probe.ok).length;
-  return { requests: probes.length, successful: ok, failed: probes.length - ok, avg: probes.length ? probes.reduce((sum, p) => sum + p.latencyMs, 0) / probes.length : null, backends: out };
+const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || min));
+const fmt = (value, digits = 1) => (value === null || value === undefined ? "—" : Number(value).toFixed(digits));
+
+function download(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url; link.download = name; link.click();
+  URL.revokeObjectURL(url);
+}
+
+function summarize(probes) {
+  const backends = Object.fromEntries(BACKENDS.map((name) => [name, 0]));
+  const byStatus = {};
+  let ok = 0;
+  let unknown = 0;
+  for (const p of probes) {
+    if (p.ok) ok += 1;
+    const key = p.status ?? "network";
+    byStatus[key] = (byStatus[key] || 0) + 1;
+    if (p.instance && p.instance in backends) backends[p.instance] += 1; else unknown += 1;
+  }
+  const lat = probes.map((p) => p.latencyMs).sort((a, b) => a - b);
+  const pick = (q) => (lat.length ? lat[Math.max(0, Math.ceil(q * lat.length) - 1)] : null);
+  return {
+    requests: probes.length, ok, failed: probes.length - ok, backends, unknown, byStatus,
+    avg: lat.length ? lat.reduce((a, b) => a + b, 0) / lat.length : null,
+    p50: pick(0.5), p95: pick(0.95), p99: pick(0.99),
+  };
+}
+
+function Metric({ label, value, unit }) {
+  return <div className="scale-metric card"><span>{label}</span><b>{value}<small>{unit}</small></b></div>;
 }
 
 function ScalabilityDashboardPage() {
@@ -24,93 +49,255 @@ function ScalabilityDashboardPage() {
   const [requests, setRequests] = useState(500);
   const [concurrency, setConcurrency] = useState(12);
   const [endpoint, setEndpoint] = useState("/health");
-  const [run, setRun] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [health, setHealth] = useState({});
-  const [busy, setBusy] = useState(false);
+  const [probes, setProbes] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [timing, setTiming] = useState({ startedAt: null, endedAt: null });
+  const [instances, setInstances] = useState(null);
+  const [target, setTarget] = useState("backend-2");
   const [scenario, setScenario] = useState(null);
   const [message, setMessage] = useState("");
-  const current = MODULES.find((item) => item.id === selected);
-  const probes = run?.probes || [];
+  const bufferRef = useRef([]);
+  const controllerRef = useRef(null);
+
+  const current = MODULES.find((m) => m.id === selected);
   const summary = useMemo(() => summarize(probes), [probes]);
-
-  const refreshHistory = useCallback(() => api.get("/admin/scalability-tests/history").then((res) => setHistory(res.data.data || [])).catch(() => {}), []);
-  useEffect(() => { refreshHistory(); }, [refreshHistory]);
-  useEffect(() => {
-    const refresh = async () => {
-      const pairs = await Promise.all(BACKENDS.map(async (name) => {
-        try { const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/v1/health`, { cache: "no-store" }); return [name, res.ok ? "healthy" : "unhealthy"]; }
-        catch { return [name, "unavailable"]; }
-      }));
-      setHealth(Object.fromEntries(pairs));
-    };
-    refresh(); const timer = setInterval(refresh, 5000); return () => clearInterval(timer);
-  }, []);
-  async function startLoad() {
-    setBusy(true); setMessage("");
-    try {
-      const res = await api.post("/admin/scalability-tests/load", { requests: Number(requests), concurrency: Number(concurrency), endpoint });
-      const initial = res.data.data; setRun(initial);
-      const controller = new AbortController(); window.activeScaleController = controller;
-      let next = 0;
-      const worker = async () => {
-        while (!controller.signal.aborted) {
-          const index = next++;
-          if (index >= Number(requests)) return;
-          const started = performance.now(); let probe;
-          try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/v1${endpoint}`, { signal: controller.signal, cache: "no-store" });
-            await response.arrayBuffer();
-            probe = { at: new Date().toISOString(), ok: response.ok, status: response.status, latencyMs: performance.now() - started, instance: response.headers.get("x-instance-id"), upstream: response.headers.get("x-upstream") };
-          } catch (error) {
-            if (controller.signal.aborted) return;
-            probe = { at: new Date().toISOString(), ok: false, status: null, latencyMs: performance.now() - started, instance: null, error: error.message };
-          }
-          try { const update = await api.post(`/admin/scalability-tests/${initial.id}/probes`, probe); setRun(update.data.data); }
-          catch (error) { setMessage(error.message); controller.abort(); return; }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(100, Math.max(1, Number(concurrency))) }, () => worker()));
-      try { const final = await api.post(`/admin/scalability-tests/${initial.id}/finish`, { status: controller.signal.aborted ? "stopped" : "completed" }); setRun(final.data.data); refreshHistory(); } catch (error) { setMessage(error.message); }
-      window.activeScaleController = null;
-    }
-    catch (err) { setMessage(err.response?.data?.message || err.message); }
-    finally { setBusy(false); }
-  }
-  async function stopLoad() { if (!run) return; setBusy(true); try { window.activeScaleController?.abort(); const res = await api.post(`/admin/scalability-tests/${run.id}/finish`, { status: "stopped" }); setRun(res.data.data); refreshHistory(); } catch (err) { setMessage(err.message); } finally { setBusy(false); } }
-
-  function beginScenario(id) { setScenario({ id, phase: "before", phases: {}, events: [{ at: new Date().toISOString(), text: "Monitoring started" }], detectedAt: null, recoveredAt: null, firstRecoveredAt: null }); }
-  function capturePhase(phase, text) {
-    if (!scenario) return;
-    const observed = summarize(probes);
-    setScenario((old) => ({ ...old, phase, phases: { ...old.phases, [phase]: observed }, events: [...old.events, { at: new Date().toISOString(), text }], ...(phase === "during" ? { detectedAt: new Date().toISOString() } : {}), ...(phase === "after" ? { recoveredAt: new Date().toISOString() } : {}) }));
-  }
-  const testRunning = run?.status === "running";
   const chartMax = Math.max(1, ...BACKENDS.map((name) => summary.backends[name]));
+  const elapsedSec = timing.startedAt && timing.endedAt ? (timing.endedAt - timing.startedAt) / 1000 : null;
 
-  return <main className="container page scale-page">
-    <div className="scale-heading"><div><div className="scale-kicker">REQUIREMENT 5 · RELIABILITY LAB</div><h1 className="page-title">Scalability &amp; Fault-Tolerance Testing Dashboard</h1><p className="muted">Run bounded checks through Nginx and review evidence collected from actual responses.</p></div><div className="scale-live"><i /> LIVE MONITORING</div></div>
-    <div className="scale-layout">
-      <aside className="scale-sidebar card"><div className="scale-sidebar-title">TEST MODULES <span>05</span></div>{MODULES.map((item, index) => <button key={item.id} className={`scale-module ${selected === item.id ? "active" : ""}`} onClick={() => setSelected(item.id)}><span className="scale-module-num">0{index + 1}</span><span><b>{item.title}</b><small>{item.eyebrow}</small></span><span className="scale-chevron">›</span></button>)}<div className="scale-note"><b>Manual controls only</b><p>Container operations stay in Docker Desktop or PowerShell. Dashboard buttons only record your checkpoint.</p></div></aside>
-      <section className="scale-content">
-        <div className="scale-module-head"><div><div className="scale-kicker">{current.eyebrow}</div><h2>{current.title}</h2><p>{current.description}</p></div><span className={`scale-status ${testRunning ? "working" : run?.status || "idle"}`}><i />{testRunning ? "RUNNING" : run?.status?.toUpperCase() || "READY"}</span></div>
-        {message && <div className="alert alert-error">{String(message)}</div>}
-        <div className="scale-card card"><div className="scale-card-title"><span>Test configuration</span><small>{current.purpose}</small></div>
-          {selected === "load" && <><div className="scale-fields"><label>Request count<input className="input" type="number" min="1" max="5000" value={requests} onChange={(e) => setRequests(e.target.value)} disabled={testRunning} /></label><label>Concurrency<input className="input" type="number" min="1" max="100" value={concurrency} onChange={(e) => setConcurrency(e.target.value)} disabled={testRunning} /></label><label>Safe endpoint<select className="select" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} disabled={testRunning}><option value="/health">GET /health</option><option value="/products">GET /products (catalog)</option></select></label></div><div className="scale-actions"><button className="btn btn-primary" onClick={startLoad} disabled={busy || testRunning}>Start test</button><button className="btn btn-danger" onClick={stopLoad} disabled={!testRunning || busy}>Stop test</button><span className="muted">Max 5,000 requests · max concurrency 100</span></div></>}
-          {["failover", "recovery"].includes(selected) && <><div className="scale-actions"><button className="btn btn-outline" onClick={() => beginScenario(selected)} disabled={Boolean(scenario) || testRunning}>Start monitoring</button><button className="btn btn-primary" onClick={startLoad} disabled={busy || testRunning}>Start probe stream</button><button className="btn btn-danger" onClick={stopLoad} disabled={!testRunning || busy}>Stop stream</button></div>{scenario && <div className="scale-checkpoint"><div className="scale-checkpoint-label">MANUAL ACTION CHECKPOINT · {scenario.phase.toUpperCase()}</div><b>{scenario.phase === "before" ? "Verify all three backends are receiving requests, then manually stop backend-2." : scenario.phase === "during" ? "Keep the probes running. When ready, manually restart backend-2." : "Recovery recorded. Continue monitoring to collect post-recovery observations."}</b><p>Container: <code>backend-2</code>. Use Docker Desktop or PowerShell; this dashboard never executes container commands.</p><div className="scale-actions"><button className="btn btn-outline btn-small" disabled={scenario.phase !== "before"} onClick={() => capturePhase("before", "Before-failure snapshot recorded")}>Record baseline</button><button className="btn btn-outline btn-small" disabled={scenario.phase !== "before"} onClick={() => capturePhase("during", "User confirmed backend-2 stopped")}>I stopped the container</button><button className="btn btn-primary btn-small" disabled={scenario.phase !== "during"} onClick={() => capturePhase("after", "User confirmed backend-2 restarted")}>I restarted the container</button><button className="btn btn-outline btn-small" onClick={() => setScenario((old) => ({ ...old, events: [...old.events, { at: new Date().toISOString(), text: "Continue monitoring confirmed" }] }))}>Continue monitoring</button></div></div>}</>}
-          {["workers", "individual"].includes(selected) && <div className="scale-unavailable"><span>TELEMETRY UNAVAILABLE</span><b>Safe worker tests are not configured in this deployment.</b><p>The only worker queue, <code>order.email</code>, carries real customer email jobs. The codebase has no dedicated test queue, worker heartbeat endpoint, RabbitMQ management API credentials, or per-worker processing metrics. Publishing into the business queue could send customer email, so test execution is disabled.</p><p>Required to implement: dedicated durable test queue, worker-specific heartbeat/processed counters, and restricted RabbitMQ queue/consumer stats access.</p></div>}
+  // حالة كل نسخة تأتي من السيرفر (يفحص كل backend مباشرة داخل شبكة Docker)
+  useEffect(() => {
+    let ignore = false;
+    function load() {
+      api.get("/admin/scalability/instances")
+        .then((res) => { if (!ignore) setInstances(res.data.data); })
+        .catch((err) => { if (!ignore) setInstances({ error: err.message }); });
+    }
+    load();
+    const timer = setInterval(load, 4000);
+    return () => { ignore = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => () => controllerRef.current?.abort(), []);
+
+  async function startLoad() {
+    if (controllerRef.current) return;
+    const total = clamp(requests, 1, 5000);
+    const workers = clamp(concurrency, 1, 100);
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    bufferRef.current = [];
+    setProbes([]); setMessage(""); setRunning(true);
+    setTiming({ startedAt: Date.now(), endedAt: null });
+
+    const flush = () => {
+      if (!bufferRef.current.length) return;
+      const chunk = bufferRef.current;
+      bufferRef.current = [];
+      setProbes((old) => old.concat(chunk));
+    };
+    const timer = setInterval(flush, 250);
+    const token = localStorage.getItem("token");
+    const headers = token ? { Authorization: "Bearer " + token } : {};
+    let next = 0;
+
+    const worker = async () => {
+      while (!controller.signal.aborted && next < total) {
+        next += 1;
+        const t0 = performance.now();
+        let probe;
+        try {
+          const res = await fetch(`${API_ORIGIN}/api/v1${endpoint}`, { headers, cache: "no-store", signal: controller.signal });
+          await res.arrayBuffer();
+          probe = { at: Date.now(), ok: res.ok, status: res.status, latencyMs: performance.now() - t0, instance: res.headers.get("x-instance-id") };
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          probe = { at: Date.now(), ok: false, status: null, latencyMs: performance.now() - t0, instance: null, error: error.message };
+        }
+        bufferRef.current.push(probe);
+      }
+    };
+
+    await Promise.all(Array.from({ length: workers }, worker));
+    clearInterval(timer);
+    flush();
+    controllerRef.current = null;
+    setRunning(false);
+    setTiming((old) => ({ ...old, endedAt: Date.now() }));
+  }
+
+  function stopLoad() { controllerRef.current?.abort(); }
+
+  // ---- سيناريو failover: كل مرحلة تُحسب من نقطة بدايتها فقط (ليست تراكمية) ----
+  function beginScenario() {
+    setScenario({ target, phase: "before", marks: { before: { idx: probes.length, at: Date.now() } }, events: [{ at: Date.now(), text: "Monitoring started (baseline)" }] });
+  }
+  function mark(phase, text) {
+    setScenario((old) => ({ ...old, phase, marks: { ...old.marks, [phase]: { idx: probes.length, at: Date.now() } }, events: [...old.events, { at: Date.now(), text }] }));
+  }
+
+  const phaseStats = useMemo(() => {
+    if (!scenario) return null;
+    const m = scenario.marks;
+    return {
+      before: m.before ? summarize(probes.slice(m.before.idx, m.during ? m.during.idx : undefined)) : null,
+      during: m.during ? summarize(probes.slice(m.during.idx, m.after ? m.after.idx : undefined)) : null,
+      after: m.after ? summarize(probes.slice(m.after.idx)) : null,
+    };
+  }, [scenario, probes]);
+
+  // الزمن من لحظة "أعدتُ التشغيل" حتى أول طلب ناجح خدمته النسخة نفسها
+  const recoverySeconds = useMemo(() => {
+    if (!scenario || !scenario.marks.after) return null;
+    const first = probes.slice(scenario.marks.after.idx).find((p) => p.ok && p.instance === scenario.target);
+    return first ? (first.at - scenario.marks.after.at) / 1000 : null;
+  }, [scenario, probes]);
+
+  const statusText = (s) => Object.entries(s.byStatus).map(([code, n]) => `${code}: ${n}`).join(" · ") || "—";
+  const streamActive = running;
+
+  return (
+    <main className="container page scale-page">
+      <div className="scale-heading">
+        <div>
+          <div className="scale-kicker">REQUIREMENT 5 · RELIABILITY LAB</div>
+          <h1 className="page-title">Scalability &amp; Fault-Tolerance Dashboard</h1>
+          <p className="muted">Bounded checks through Nginx. Every number comes from real responses; the server keeps no test state.</p>
         </div>
-        {selected !== "load" && !["failover", "recovery"].includes(selected) ? null : <>
-          <div className="scale-metrics"><Metric label="Requests observed" value={run?.metrics?.total ?? summary.requests} unit="" /><Metric label="Success rate" value={run?.metrics?.successRate?.toFixed(1) ?? (summary.requests ? (summary.successful / summary.requests * 100).toFixed(1) : "—")} unit="%" /><Metric label="Avg latency" value={run?.metrics?.averageLatencyMs?.toFixed(1) ?? (summary.avg?.toFixed(1) || "—")} unit="ms" /><Metric label="Requests / sec" value={run?.metrics?.requestsPerSecond?.toFixed(1) ?? "—"} unit="" /></div>
-          <div className="scale-panels"><div className="card scale-chart"><div className="scale-card-title"><span>Backend request distribution</span><small>From X-Instance-Id response header</small></div>{BACKENDS.map((name) => <div className="scale-bar-row" key={name}><span>{name}</span><div><i style={{ width: `${Math.max(summary.backends[name] ? 3 : 0, summary.backends[name] / chartMax * 100)}%` }} /></div><b>{summary.backends[name]}</b></div>)}<div className="scale-chart-foot">Unknown instance: {probes.filter((probe) => !BACKENDS.includes(probe.instance)).length} · Values are actual responses</div></div><div className="card scale-chart"><div className="scale-card-title"><span>Recent response latency</span><small>Last 40 observations · milliseconds</small></div><div className="scale-spark">{probes.slice(-40).map((probe, index) => <i key={`${probe.at}-${index}`} title={`${probe.latencyMs} ms · ${probe.status ?? "network error"}`} className={probe.ok ? "ok" : "bad"} style={{ height: `${Math.max(5, Math.min(100, probe.latencyMs / Math.max(1, ...probes.slice(-40).map((p) => p.latencyMs)) * 100))}%` }} />)}</div><div className="scale-chart-foot">P50 {run?.metrics?.p50 ?? "Unavailable"} ms · P95 {run?.metrics?.p95 ?? "Unavailable"} ms · P99 {run?.metrics?.p99 ?? "Unavailable"} ms</div></div></div>
-          <div className="scale-card card"><div className="scale-card-title"><span>Backend observations</span><small>Named identity is from actual X-Instance-Id response headers</small></div><div className="scale-backends">{BACKENDS.map((name) => { const last = [...probes].reverse().find((probe) => probe.instance === name); const state = last ? (last.ok ? "observed" : "error") : "not-seen"; return <div key={name} className="scale-backend"><span className={`scale-health ${state === "observed" ? "healthy" : state === "error" ? "unavailable" : "unknown"}`} /><b>{name}</b><span>{state === "observed" ? "responded" : state === "error" ? "request error" : "not observed"}</span><small>{summary.backends[name]} successful-identity responses</small></div>; })}</div><p className="scale-chart-foot">A backend is marked observed only after its ID appears in a measured response. Named per-instance health checks are not available through Nginx.</p></div>
-          {scenario && <div className="scale-card card"><div className="scale-card-title"><span>Before / during / after comparison</span><small>Snapshots only include observations captured at each checkpoint</small></div><div className="table-wrap"><table className="table"><thead><tr><th>Metric</th><th>Before failure</th><th>During failure</th><th>After recovery</th></tr></thead><tbody>{[["Successful requests", "successful"], ["Failed requests", "failed"], ["Average latency (ms)", "avg"], ...BACKENDS.map((name) => [`${name} requests`, name])].map(([label, key]) => <tr key={key}><td>{label}</td>{["before", "during", "after"].map((phase) => <td key={phase}>{scenario.phases[phase] ? (key === "avg" ? scenario.phases[phase].avg?.toFixed(1) ?? "Unavailable" : scenario.phases[phase][key] ?? "Unavailable") : "—"}</td>)}</tr>)}</tbody></table></div><ul className="scale-events">{scenario.events.map((event, i) => <li key={i}><time>{new Date(event.at).toLocaleTimeString()}</time>{event.text}</li>)}</ul></div>}
-        </>}
-        <div className="scale-card card"><div className="scale-card-title"><span>Test results &amp; history</span><div className="scale-actions"><button className="btn btn-outline btn-small" disabled={!run} onClick={() => download(`scalability-${run.id}.json`, JSON.stringify({ ...run, scenario }, null, 2), "application/json")}>Export JSON</button><button className="btn btn-outline btn-small" disabled={!run} onClick={() => { const rows = run.probes || []; download(`scalability-${run.id}.csv`, ["timestamp,success,status,latency_ms,instance,error", ...rows.map((p) => [p.at, p.ok, p.status ?? "", p.latencyMs, p.instance ?? "", JSON.stringify(p.error || "")].join(","))].join("\n"), "text/csv"); }}>Export CSV</button></div></div>{run && <p className="scale-run-time">Started {new Date(run.startedAt).toLocaleString()} · {run.endedAt ? `Ended ${new Date(run.endedAt).toLocaleString()}` : "In progress"} · {run.status}</p>}{history.length ? history.slice(0, 5).map((item) => <button className="scale-history-row" key={item.id} onClick={() => setRun(item)}><span><b>{item.kind}</b><small>{new Date(item.startedAt).toLocaleString()}</small></span><span>{item.metrics?.total || 0} requests</span><span className={`scale-status ${item.status}`}>{item.status}</span></button>) : <p className="muted">No completed load runs yet. Results are kept in backend memory and reset when the backend restarts.</p>}</div>
-      </section>
-    </div>
-  </main>;
+        <div className="scale-live"><i /> LIVE MONITORING</div>
+      </div>
+
+      <div className="scale-layout">
+        <aside className="scale-sidebar card">
+          <div className="scale-sidebar-title">TEST MODULES <span>0{MODULES.length}</span></div>
+          {MODULES.map((item, index) => (
+            <button key={item.id} className={`scale-module ${selected === item.id ? "active" : ""}`} onClick={() => setSelected(item.id)}>
+              <span className="scale-module-num">0{index + 1}</span>
+              <span><b>{item.title}</b><small>{item.eyebrow}</small></span>
+              <span className="scale-chevron">›</span>
+            </button>
+          ))}
+          <div className="scale-note">
+            <b>Workers &amp; emails</b>
+            <p>Per-worker processing and queue consumers are shown on <Link to="/admin/async-monitor">the email monitor</Link>. Container stop/start stays manual (Docker Desktop or PowerShell).</p>
+          </div>
+        </aside>
+
+        <section className="scale-content">
+          <div className="scale-module-head">
+            <div><div className="scale-kicker">{current.eyebrow}</div><h2>{current.title}</h2><p>{current.description}</p></div>
+            <span className={`scale-status ${running ? "working" : "idle"}`}><i />{running ? "RUNNING" : "READY"}</span>
+          </div>
+          {message && <div className="alert alert-error">{message}</div>}
+
+          <div className="scale-card card">
+            <div className="scale-card-title"><span>Probe stream</span><small>{current.purpose}</small></div>
+            <div className="scale-fields">
+              <label>Request count<input className="input" type="number" min="1" max="5000" value={requests} onChange={(e) => setRequests(e.target.value)} disabled={running} /></label>
+              <label>Concurrency<input className="input" type="number" min="1" max="100" value={concurrency} onChange={(e) => setConcurrency(e.target.value)} disabled={running} /></label>
+              <label>Endpoint<select className="select" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} disabled={running}><option value="/health">GET /health</option><option value="/products">GET /products</option></select></label>
+            </div>
+            <div className="scale-actions">
+              <button className="btn btn-primary" onClick={startLoad} disabled={running || Boolean(scenario)}>Start stream</button>
+              <button className="btn btn-danger" onClick={stopLoad} disabled={!running}>Stop</button>
+              <span className="muted">Tip: start the stack with THROTTLE_LIMIT=100000, otherwise 429 appears (which also proves the shared limiter).</span>
+            </div>
+          </div>
+
+          <div className="scale-card card">
+            <div className="scale-card-title"><span>Backend instances</span><small>Checked server-side, one by one</small></div>
+            <div className="scale-backends">
+              {instances && instances.items ? instances.items.map((item) => (
+                <div key={item.name} className="scale-backend">
+                  <span className={`scale-health ${item.status === "up" ? "healthy" : item.status === "degraded" ? "unknown" : "unavailable"}`} />
+                  <b>{item.name}</b>
+                  <span>{item.status}{item.latencyMs !== null ? ` · ${item.latencyMs} ms` : ""}</span>
+                  <small>{item.error ? `error: ${item.error}` : `reports: ${item.reportedInstance || "?"}`}</small>
+                </div>
+              )) : <p className="muted">{instances && instances.error ? `Could not load instances: ${instances.error}` : "Loading..."}</p>}
+            </div>
+            {instances && instances.servedBy && <p className="scale-chart-foot">This check was served by {instances.servedBy} · refreshed every 4 s</p>}
+          </div>
+
+          <div className="scale-metrics">
+            <Metric label="Requests observed" value={summary.requests} unit="" />
+            <Metric label="Success rate" value={summary.requests ? fmt(summary.ok / summary.requests * 100) : "—"} unit="%" />
+            <Metric label="Avg latency" value={fmt(summary.avg)} unit="ms" />
+            <Metric label="Requests / sec" value={elapsedSec ? fmt(summary.requests / elapsedSec) : "—"} unit="" />
+          </div>
+
+          <div className="scale-panels">
+            <div className="card scale-chart">
+              <div className="scale-card-title"><span>Backend request distribution</span><small>From X-Instance-Id</small></div>
+              {BACKENDS.map((name) => (
+                <div className="scale-bar-row" key={name}>
+                  <span>{name}</span>
+                  <div><i style={{ width: `${Math.max(summary.backends[name] ? 3 : 0, summary.backends[name] / chartMax * 100)}%` }} /></div>
+                  <b>{summary.backends[name]}</b>
+                </div>
+              ))}
+              <div className="scale-chart-foot">Unknown instance: {summary.unknown} · Status codes: {statusText(summary)}</div>
+            </div>
+            <div className="card scale-chart">
+              <div className="scale-card-title"><span>Latency percentiles</span><small>milliseconds</small></div>
+              <div className="scale-bar-row"><span>P50</span><div /><b>{fmt(summary.p50)}</b></div>
+              <div className="scale-bar-row"><span>P95</span><div /><b>{fmt(summary.p95)}</b></div>
+              <div className="scale-bar-row"><span>P99</span><div /><b>{fmt(summary.p99)}</b></div>
+            </div>
+          </div>
+
+          {selected === "failover" && (
+            <div className="scale-card card">
+              <div className="scale-card-title"><span>Failover checkpoints</span><small>Manual container actions; buttons only record your checkpoint</small></div>
+              <div className="scale-fields">
+                <label>Backend to stop<select className="select" value={target} onChange={(e) => setTarget(e.target.value)} disabled={Boolean(scenario)}>{BACKENDS.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+              </div>
+              <div className="scale-actions">
+                <button className="btn btn-outline btn-small" onClick={beginScenario} disabled={!streamActive || Boolean(scenario)}>1. Start baseline</button>
+                <button className="btn btn-outline btn-small" onClick={() => mark("during", `User stopped ${scenario.target}`)} disabled={!scenario || scenario.phase !== "before"}>2. I stopped it</button>
+                <button className="btn btn-primary btn-small" onClick={() => mark("after", `User restarted ${scenario.target}`)} disabled={!scenario || scenario.phase !== "during"}>3. I restarted it</button>
+                <button className="btn btn-outline btn-small" onClick={() => setScenario(null)} disabled={!scenario}>Reset</button>
+              </div>
+              <div className="scale-checkpoint">
+                <div className="scale-checkpoint-label">COMMANDS (PowerShell, repo root)</div>
+                <p><code>docker compose stop {target}</code> then, after restarting: <code>docker compose start {target}</code> followed by <code>docker compose exec lb nginx -s reload</code></p>
+                <p className="muted">Nginx resolves backend addresses at startup, so reload it after a restart if the container got a new IP. Start the stream first (large request count, e.g. 3000), then begin the baseline.</p>
+              </div>
+              {phaseStats && (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead><tr><th>Metric</th><th>Before</th><th>During outage</th><th>After recovery</th></tr></thead>
+                    <tbody>
+                      {[["Requests", (s) => s.requests], ["Successful", (s) => s.ok], ["Failed", (s) => s.failed], ["Avg latency (ms)", (s) => fmt(s.avg)], ...BACKENDS.map((n) => [`${n} served`, (s) => s.backends[n]])].map(([label, get]) => (
+                        <tr key={label}><td>{label}</td>{["before", "during", "after"].map((p) => <td key={p}>{phaseStats[p] ? get(phaseStats[p]) : "—"}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {phaseStats && phaseStats.during && (
+                <p className="scale-chart-foot">
+                  Verdict: {scenario.target} served {phaseStats.during.backends[scenario.target]} request(s) during the outage (expected 0) · failed during outage: {phaseStats.during.failed}
+                  {recoverySeconds !== null ? ` · first response from ${scenario.target} ${fmt(recoverySeconds)} s after restart` : ""}
+                </p>
+              )}
+              {scenario && <ul className="scale-events">{scenario.events.map((e, i) => <li key={i}><time>{new Date(e.at).toLocaleTimeString()}</time>{e.text}</li>)}</ul>}
+            </div>
+          )}
+
+          <div className="scale-card card">
+            <div className="scale-card-title">
+              <span>Export</span>
+              <div className="scale-actions">
+                <button className="btn btn-outline btn-small" disabled={!probes.length} onClick={() => download("scalability-run.json", JSON.stringify({ config: { requests, concurrency, endpoint }, summary, scenario, phaseStats, recoverySeconds, probes }, null, 2), "application/json")}>Export JSON</button>
+                <button className="btn btn-outline btn-small" disabled={!probes.length} onClick={() => download("scalability-run.csv", ["timestamp,success,status,latency_ms,instance,error", ...probes.map((p) => [new Date(p.at).toISOString(), p.ok, p.status ?? "", p.latencyMs.toFixed(2), p.instance ?? "", JSON.stringify(p.error || "")].join(","))].join("\n"), "text/csv")}>Export CSV</button>
+              </div>
+            </div>
+            <p className="muted">Results live in this browser tab only (nothing is stored on the servers). Export before closing the tab and keep the files as evidence.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }
 
-function Metric({ label, value, unit }) { return <div className="scale-metric card"><span>{label}</span><b>{value}<small>{unit}</small></b></div>; }
 export default ScalabilityDashboardPage;
