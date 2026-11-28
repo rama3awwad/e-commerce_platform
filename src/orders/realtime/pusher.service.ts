@@ -19,8 +19,10 @@ export interface OrderPayload { id: string; userId: string; status: string; [key
 export class PusherService {
   private readonly logger = new Logger(PusherService.name);
   private readonly client: Pusher;
+  private readonly timeoutMs: number;
 
   constructor(config: ConfigService) {
+    this.timeoutMs = Number(config.get<string>('SOKETI_HTTP_TIMEOUT_MS', '3000'));
     this.client = new Pusher({
       appId: config.get<string>('PUSHER_APP_ID', 'app-id'),
       key: config.get<string>('PUSHER_APP_KEY', 'app-key'),
@@ -29,7 +31,7 @@ export class PusherService {
       host: config.get<string>('SOKETI_HOST', 'localhost'),
       port: String(config.get<string>('SOKETI_PORT', '6001')),
       useTLS: false,
-      timeout: 3000,
+      timeout: this.timeoutMs,
     });
   }
 
@@ -47,13 +49,19 @@ export class PusherService {
   }
 
   private trigger(channels: string[], event: string, data: unknown) {
+    const startedAt = Date.now();
     try {
       this.client.trigger(channels, event, data).then(
-        (res) => { if (!res.ok) this.logger.error(`Soketi rejected ${event}: HTTP ${res.status}`); },
-        (e: Error) => this.logger.error(`Realtime emit failed (${event}): ${e.message}`),
+        (res) => {
+          const elapsedMs = Date.now() - startedAt;
+          if (!res.ok) this.logger.error(`Soketi rejected ${event} after ${elapsedMs}ms: HTTP ${res.status}`);
+          else this.logger.log(`Soketi published ${event} in ${elapsedMs}ms`);
+        },
+        (e: Error) => this.logger.error(`Realtime emit failed (${event}) after ${Date.now() - startedAt}ms: ${e.message}`),
       );
     } catch (e) {
-      this.logger.error(`Realtime emit failed (${event}): ${(e as Error).message}`);
+      const reason = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Realtime emit failed (${event}) after ${Date.now() - startedAt}ms: ${reason}`);
     }
   }
 }

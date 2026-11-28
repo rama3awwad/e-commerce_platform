@@ -11,6 +11,8 @@ import { OrdersModule } from './orders/orders.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { CacheModule } from './common/cache/cache.module';
+import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
+import { ScalabilityModule } from './scalability/scalability.module';
 
 @Module({
   imports: [
@@ -37,6 +39,7 @@ import { CacheModule } from './common/cache/cache.module';
             limit: Number(configService.get('THROTTLE_LIMIT', 100)),
           },
         ],
+        storage: process.env.REDIS_URL ? new RedisThrottlerStorage(process.env.REDIS_URL) : undefined,
       }),
     }),
 
@@ -52,6 +55,7 @@ import { CacheModule } from './common/cache/cache.module';
     ProductsModule,
     NotificationsModule,
     OrdersModule,
+    ScalabilityModule,
   ],
   controllers: [HealthController],
   providers: [

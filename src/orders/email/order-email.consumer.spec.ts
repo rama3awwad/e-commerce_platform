@@ -11,9 +11,10 @@ const delivery = (failures = 0, body: unknown = event): Delivery => ({
   ack: jest.fn(), nack: jest.fn(),
 });
 
-function setup(opts: { sendFails?: boolean; status?: string } = {}) {
+function setup(opts: { sendFails?: boolean; status?: string; missing?: boolean } = {}) {
   const rabbit = { publish: jest.fn().mockResolvedValue(undefined), retryDelays: [30000, 90000] } as unknown as RabbitService;
-  const prisma = { emailJob: { findUnique: jest.fn().mockResolvedValue({ id: 'j1', status: opts.status ?? 'QUEUED' }), update: jest.fn().mockResolvedValue({}) } } as unknown as OrdersPrismaService;
+  const prisma: any = { emailJob: { update: jest.fn().mockResolvedValue({}) }, $queryRaw: jest.fn().mockResolvedValue(opts.missing ? [] : [{ status: opts.status ?? 'QUEUED' }]) };
+  prisma.$transaction = jest.fn((fn: (tx: any) => unknown) => fn(prisma));
   const mail = { send: opts.sendFails ? jest.fn().mockRejectedValue(new Error('smtp down')) : jest.fn().mockResolvedValue(undefined) } as unknown as MailService;
   return { consumer: new OrderEmailConsumer(rabbit, prisma, mail), rabbit, prisma, mail };
 }
@@ -23,8 +24,19 @@ describe('OrderEmailConsumer', () => {
     const { consumer, prisma, mail } = setup(); const d = delivery();
     await consumer.handle(d);
     expect((mail as any).send).toHaveBeenCalledWith(expect.objectContaining({ to: 'a@b.com' }));
-    expect((prisma as any).emailJob.update).toHaveBeenCalledWith({ where: { id: 'j1' }, data: expect.objectContaining({ status: 'SENT', attempts: 1 }) });
+    expect(prisma.emailJob.update).toHaveBeenCalledWith({ where: { id: 'j1' }, data: expect.objectContaining({ status: 'SENT', attempts: 1 }) });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(d.ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('records which worker processed the job', async () => {
+    const { consumer, prisma } = setup();
+    await consumer.handle(delivery());
+    expect(prisma.emailJob.update).toHaveBeenCalledWith({
+      where: { id: 'j1' },
+      data: expect.objectContaining({ status: 'SENT', processedBy: expect.any(String) }),
+    });
   });
 
   it('moves the first failure to the 30s retry queue', async () => {
@@ -54,6 +66,14 @@ describe('OrderEmailConsumer', () => {
     const { consumer, rabbit } = setup(); const d = delivery(0, 'not-json{');
     await consumer.handle(d);
     expect((rabbit as any).publish).toHaveBeenCalledWith('', QUEUES.EMAIL_DLQ, expect.objectContaining({ error: 'invalid JSON' }));
+    expect(d.ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('acks a message for a missing job without sending mail', async () => {
+    const { consumer, prisma, mail } = setup({ missing: true }); const d = delivery();
+    await consumer.handle(d);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(mail.send).not.toHaveBeenCalled();
     expect(d.ack).toHaveBeenCalledTimes(1);
   });
 });

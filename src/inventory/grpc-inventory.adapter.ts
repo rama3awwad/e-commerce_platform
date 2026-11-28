@@ -69,15 +69,10 @@ export class GrpcInventoryAdapter implements InventoryPort, OnModuleInit {
   }
 
   async getStock(productId: string): Promise<number> {
-    try {
-      const res = await lastValueFrom(
-        this.client.getStock({ productId: productId }).pipe(timeout(this.deadlineMs)),
-      );
+    const res = await this.call('getStock', () => lastValueFrom(
+      this.client.getStock({ productId }).pipe(timeout(this.deadlineMs)),
+    ));
       return res.available ?? 0;
-    } catch (err) {
-      this.logger.error('getStock failed for ' + productId + ': ' + this.errMsg(err));
-      throw err;
-    }
   }
 
   // المتطلب الثالث — مشكلة N+1:
@@ -86,53 +81,34 @@ export class GrpcInventoryAdapter implements InventoryPort, OnModuleInit {
   // INVENTORY_BATCH_STOCKS=false يعيد السلوك القديم فقط لقياس الفرق قبل/بعد.
   async getStocks(productIds: string[]): Promise<Record<string, number>> {
     if (!productIds.length) return {};
-    try {
-      if (process.env.INVENTORY_BATCH_STOCKS === 'false') {
-        const results = await Promise.all(
-          productIds.map(async (id) => [id, await this.getStock(id)] as const),
-        );
-        return Object.fromEntries(results);
-      }
-      const res = await lastValueFrom(
+    const res = await this.call('getStocks', () => lastValueFrom(
         this.client.getStocks({ productIds }).pipe(timeout(this.deadlineMs)),
-      );
+      ));
       const stocks: Record<string, number> = Object.fromEntries(productIds.map((id) => [id, 0]));
       for (const item of res.items ?? []) stocks[item.productId] = item.quantity ?? 0;
       return stocks;
-    } catch (err) {
-      this.logger.error('getStocks failed: ' + this.errMsg(err));
-      throw err;
-    }
   }
 
   async setStock(productId: string, quantity: number): Promise<void> {
-    try {
-      const res = await lastValueFrom(
+    const res = await this.call('setStock', () => lastValueFrom(
         this.client
-          .setStock({ productId: productId, quantity: quantity })
+          .setStock({ productId, quantity })
           .pipe(timeout(this.deadlineMs)),
-      );
+      ));
       if (!res.success) {
-        throw new Error('SetStock returned success=false for product ' + productId);
+        throw new Error('SetStock returned success=false');
       }
-    } catch (err) {
-      this.logger.error(
-        'setStock failed for ' + productId + ' (qty=' + quantity + '): ' + this.errMsg(err),
-      );
-      throw err;
-    }
   }
 
   async reserve(reference: string, items: ReservationItem[]): Promise<ReserveResult> {
-    try {
-      const res = await lastValueFrom(
+    const res = await this.call('reserve', () => lastValueFrom(
         this.client
           .reserveStock({
             reservationId: reference,
             items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
           })
           .pipe(timeout(this.deadlineMs)),
-      );
+      ));
 
       if (!res.success) {
         const insufficient = (res.shortages ?? []).map((s) => ({
@@ -143,25 +119,24 @@ export class GrpcInventoryAdapter implements InventoryPort, OnModuleInit {
         return { success: false, insufficient };
       }
       return { success: true };
-    } catch (err) {
-      this.logger.error('reserve failed (ref=' + reference + '): ' + this.errMsg(err));
-      throw err;
-    }
   }
 
   async release(reference: string, _items: ReservationItem[]): Promise<void> {
-    try {
-      await lastValueFrom(
+    await this.call('release', () => lastValueFrom(
         this.client.releaseStock({ reservationId: reference }).pipe(timeout(this.deadlineMs)),
-      );
-    } catch (err) {
-      this.logger.error('release failed (ref=' + reference + '): ' + this.errMsg(err));
-      throw err;
-    }
+      ));
   }
 
-  private errMsg(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    return String(err);
+  private async call<T>(operation: string, request: () => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      const result = await request();
+      this.logger.log(`Inventory RPC ${operation} completed in ${Date.now() - startedAt}ms`);
+      return result;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Inventory RPC ${operation} failed after ${Date.now() - startedAt}ms: ${reason}`);
+      throw err;
+    }
   }
 }

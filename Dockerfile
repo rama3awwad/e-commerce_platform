@@ -33,9 +33,11 @@ FROM node:20-alpine AS production
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --chown=node:node --from=dependencies /app/package.json ./package.json
-COPY --chown=node:node --from=production-dependencies /app/node_modules ./node_modules
+COPY --chown=node:node --from=dependencies /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/prisma ./prisma
+COPY --chown=node:node --from=builder /app/scripts/init-inventory-stocks.ts ./scripts/init-inventory-stocks.ts
+COPY --chown=node:node --from=builder /app/src/inventory/proto/inventory.proto ./src/inventory/proto/inventory.proto
 COPY --chown=node:node --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \

@@ -17,6 +17,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "init:inventory-stocks": "ts-node --transpile-only scripts/init-inventory-stocks.ts",
     "seed:perf": "ts-node --transpile-only scripts/seed-perf.ts",
     "seed:perf:reset": "ts-node --transpile-only scripts/seed-perf.ts --reset",
     "test": "jest --runInBand",

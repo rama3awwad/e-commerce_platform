@@ -6,6 +6,10 @@ import { OrdersPrismaService } from '../prisma/orders-prisma.service';
 import { OrderCreatedEvent } from '../events/order-created.event';
 import { decideRetry } from './retry-policy';
 import { renderOrderCreatedEmail } from './order-email.template';
+import { Prisma } from '.prisma/orders-client';
+import { hostname } from 'os';
+
+const WORKER_ID = process.env.INSTANCE_ID || hostname();
 
 /**
  * الـ Worker: يسحب order.created ويرسل الإيميل.
@@ -17,7 +21,7 @@ export class OrderEmailConsumer implements OnApplicationBootstrap {
   private readonly logger = new Logger(OrderEmailConsumer.name);
   constructor(private readonly rabbit: RabbitService, private readonly prisma: OrdersPrismaService, private readonly mail: MailService) {}
 
-  async onApplicationBootstrap() { await this.rabbit.consume(QUEUES.EMAIL, (d) => this.handle(d), 5); }
+  async onApplicationBootstrap() { await this.rabbit.consume(QUEUES.EMAIL, (d) => this.handle(d), 1); }
 
   private async forceFailEnabled(): Promise<boolean> {
     try { return (await this.prisma.appFlag.findUnique({ where: { key: 'mail.forceFail' } }))?.value === 'true'; }
@@ -32,9 +36,14 @@ export class OrderEmailConsumer implements OnApplicationBootstrap {
       d.ack(); return;
     }
     const failures = Number(d.msg.properties.headers?.[ATTEMPT_HEADER] ?? 0);
-    const job = await this.prisma.emailJob.findUnique({ where: { id: event.jobId } });
-    if (!job) { this.logger.warn(`email_job ${event.jobId} not found, dropping message`); d.ack(); return; }
-    if (job.status === 'SENT') { d.ack(); return; } // تسليم مكرر: أُرسل سابقاً
+    await this.prisma.$transaction((tx) => this.process(tx, event, failures), { timeout: 60000, maxWait: 10000 });
+    d.ack();
+  }
+
+  private async process(tx: Prisma.TransactionClient, event: OrderCreatedEvent, failures: number): Promise<void> {
+    const rows = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM email_jobs WHERE id = ${event.jobId} FOR UPDATE`;
+    if (!rows.length) { this.logger.warn(`email_job ${event.jobId} not found, dropping message`); return; }
+    if (rows[0].status === 'SENT') return;
 
     let sendError: unknown;
     try {
@@ -44,22 +53,22 @@ export class OrderEmailConsumer implements OnApplicationBootstrap {
     } catch (e) { sendError = e; }
 
     if (!sendError) {
-      await this.prisma.emailJob.update({ where: { id: job.id }, data: { status: 'SENT', attempts: failures + 1, sentAt: new Date(), lastError: null } });
-      d.ack(); return;
+      await tx.emailJob.update({ where: { id: event.jobId }, data: { status: 'SENT', attempts: failures + 1, sentAt: new Date(), lastError: null, processedBy: WORKER_ID } });
+      this.logger.log(JSON.stringify({ event: 'EMAIL_JOB_SENT', worker: WORKER_ID, orderNumber: event.orderNumber, jobId: event.jobId }));
+      return;
     }
 
     const message = sendError instanceof Error ? sendError.message : String(sendError);
     const attempts = failures + 1;
     const decision = decideRetry(attempts, this.rabbit.retryDelays);
     if (decision.action === 'retry') {
-      this.logger.warn(`Email for order #${event.orderNumber} failed (attempt ${attempts}); retry in ${decision.delayMs}ms: ${message}`);
+      this.logger.warn(`Email for order #${event.orderNumber} failed (attempt ${attempts}, worker ${WORKER_ID}); retry in ${decision.delayMs}ms: ${message}`);
       await this.rabbit.publish('', retryQueueName(decision.delayMs), event, { [ATTEMPT_HEADER]: attempts });
-      await this.prisma.emailJob.update({ where: { id: job.id }, data: { status: 'RETRYING', attempts, lastError: message } });
+      await tx.emailJob.update({ where: { id: event.jobId }, data: { status: 'RETRYING', attempts, lastError: message, processedBy: WORKER_ID } });
     } else {
-      this.logger.error(`Email for order #${event.orderNumber} failed ${attempts} times; moving to DLQ: ${message}`);
+      this.logger.error(`Email for order #${event.orderNumber} failed ${attempts} times (worker ${WORKER_ID}); moving to DLQ: ${message}`);
       await this.rabbit.publish('', QUEUES.EMAIL_DLQ, event, { [ATTEMPT_HEADER]: attempts, 'x-last-error': message });
-      await this.prisma.emailJob.update({ where: { id: job.id }, data: { status: 'DEAD', attempts, lastError: message } });
+      await tx.emailJob.update({ where: { id: event.jobId }, data: { status: 'DEAD', attempts, lastError: message, processedBy: WORKER_ID } });
     }
-    d.ack(); // بعد نقل الرسالة بأمان فقط
   }
 }

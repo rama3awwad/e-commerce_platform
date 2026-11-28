@@ -57,6 +57,7 @@ model EmailJob {
   status      EmailJobStatus @default(QUEUED)
   attempts    Int            @default(0)
   lastError   String?
+  processedBy String?
   publishedAt DateTime?
   sentAt      DateTime?
   createdAt   DateTime       @default(now())

@@ -1,3 +1,98 @@
+x-backend: &backend
+  build: { context: ., dockerfile: Dockerfile }
+  image: ecommerce-backend:local
+  restart: unless-stopped
+  environment: &backend-env
+    NODE_ENV: ${NODE_ENV:-production}
+    USERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=users&connection_limit=5"
+    PRODUCTS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
+    ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
+    NOTIFICATIONS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=notifications&connection_limit=5"
+    INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
+    INTERNAL_API_TIMEOUT_MS: ${INTERNAL_API_TIMEOUT_MS:-3000}
+    JWT_USER_CACHE_TTL_SECONDS: ${JWT_USER_CACHE_TTL_SECONDS:-60}
+    # Internal APIs run in this NestJS process; address the same container directly,
+    # never the public Nginx entrypoint (localhost:3000 from inside a backend container).
+    USERS_API_URL: ${USERS_API_URL:-http://127.0.0.1:3000/api/v1}
+    PRODUCTS_API_URL: ${PRODUCTS_API_URL:-http://127.0.0.1:3000/api/v1}
+    ORDERS_API_URL: ${ORDERS_API_URL:-http://127.0.0.1:3000/api/v1}
+    NOTIFICATIONS_API_URL: ${NOTIFICATIONS_API_URL:-http://127.0.0.1:3000/api/v1}
+    JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+    JWT_EXPIRATION: ${JWT_EXPIRATION:-1d}
+    PORT: "3000"
+    TRUST_PROXY_HOPS: "1"
+    THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+    THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
+    LOGIN_THROTTLE_LIMIT: ${LOGIN_THROTTLE_LIMIT:-5}
+    LOGIN_THROTTLE_TTL: ${LOGIN_THROTTLE_TTL:-60000}
+    ACCOUNT_LOCKOUT_ATTEMPTS: ${ACCOUNT_LOCKOUT_ATTEMPTS:-5}
+    ACCOUNT_LOCKOUT_DURATION_MINUTES: ${ACCOUNT_LOCKOUT_DURATION_MINUTES:-15}
+    CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    UPLOAD_DIR: /app/uploads
+    UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-2097152}
+    STUB_DEFAULT_STOCK: ${STUB_DEFAULT_STOCK:-50}
+    RUN_SEED: "false"
+    INVENTORY_GRPC_URL: "inventory-service:9090"
+    INVENTORY_GRPC_DEADLINE_MS: "3000"
+    INVENTORY_BATCH_STOCKS: ${INVENTORY_BATCH_STOCKS:-true}
+    CACHE_ENABLED: ${CACHE_ENABLED:-true}
+    READ_REPLICA_ENABLED: ${READ_REPLICA_ENABLED:-true}
+    ETAG_ENABLED: ${ETAG_ENABLED:-true}
+    REDIS_URL: "redis://redis:6379"
+    CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+    READ_YOUR_WRITES_WINDOW_MS: ${READ_YOUR_WRITES_WINDOW_MS:-5000}
+    PRODUCTS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
+    ORDERS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
+    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-app}:${RABBITMQ_PASSWORD:-app-secret}@rabbitmq:5672"
+    RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    RABBITMQ_USER: ${RABBITMQ_USER:-app}
+    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-app-secret}
+    BACKEND_INSTANCES: "backend-1:3000,backend-2:3000,backend-3:3000"
+    RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
+    PUSHER_APP_ID: ${PUSHER_APP_ID:-app-id}
+    PUSHER_APP_KEY: ${PUSHER_APP_KEY:-app-key}
+    PUSHER_APP_SECRET: ${PUSHER_APP_SECRET:-app-secret}
+    SOKETI_HOST: soketi
+    SOKETI_PORT: "6001"
+  volumes: ["uploads:/app/uploads"]
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+    db: { condition: service_healthy }
+    inventory-service: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    read-replica: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    soketi: { condition: service_started }
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/api/v1/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 30
+    start_period: 60s
+
+x-worker: &worker
+  image: ecommerce-backend:local
+  build: { context: ., dockerfile: Dockerfile }
+  restart: unless-stopped
+  entrypoint: ["node", "/app/dist/worker.js"]
+  environment: &worker-env
+    NODE_ENV: ${NODE_ENV:-production}
+    ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
+    RABBITMQ_URL: "amqp://${RABBITMQ_USER:-app}:${RABBITMQ_PASSWORD:-app-secret}@rabbitmq:5672"
+    RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
+    MAIL_DRIVER: ${MAIL_DRIVER:-log}
+    MAIL_FORCE_FAIL: ${MAIL_FORCE_FAIL:-false}
+    MAIL_FROM: ${MAIL_FROM:-Souq Store <no-reply@localhost>}
+    SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+    SMTP_PORT: ${SMTP_PORT:-465}
+    SMTP_SECURE: ${SMTP_SECURE:-true}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASS: ${SMTP_PASS:-}
+  depends_on:
+    db: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+
 services:
   # ============================================================
   #  قاعدة بيانات تطبيق NestJS
@@ -132,8 +227,8 @@ services:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-app-secret}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -162,119 +257,74 @@ services:
     ports:
       - "6001:6001"
 
-  # ============================================================
-  #  تطبيق NestJS الأساسي
-  # ============================================================
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+  migrate:
+    <<: *backend
+    restart: "no"
+    healthcheck: { disable: true }
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      USERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=users&connection_limit=5"
-      PRODUCTS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
-      ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
-      NOTIFICATIONS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=notifications&connection_limit=5"
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
-      INTERNAL_API_TIMEOUT_MS: ${INTERNAL_API_TIMEOUT_MS:-3000}
-      JWT_USER_CACHE_TTL_SECONDS: ${JWT_USER_CACHE_TTL_SECONDS:-60}
-      USERS_API_URL: ${USERS_API_URL:-http://localhost:3000/api/v1}
-      PRODUCTS_API_URL: ${PRODUCTS_API_URL:-http://localhost:3000/api/v1}
-      ORDERS_API_URL: ${ORDERS_API_URL:-http://localhost:3000/api/v1}
-      NOTIFICATIONS_API_URL: ${NOTIFICATIONS_API_URL:-http://localhost:3000/api/v1}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-1d}
-      PORT: ${PORT:-3000}
-      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
-      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
-      LOGIN_THROTTLE_LIMIT: ${LOGIN_THROTTLE_LIMIT:-5}
-      LOGIN_THROTTLE_TTL: ${LOGIN_THROTTLE_TTL:-60000}
-      ACCOUNT_LOCKOUT_ATTEMPTS: ${ACCOUNT_LOCKOUT_ATTEMPTS:-5}
-      ACCOUNT_LOCKOUT_DURATION_MINUTES: ${ACCOUNT_LOCKOUT_DURATION_MINUTES:-15}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
-      UPLOAD_DIR: /app/uploads
-      UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-2097152}
-      STUB_DEFAULT_STOCK: ${STUB_DEFAULT_STOCK:-50}
-      RUN_SEED: ${RUN_SEED:-true}
-      # ====== إعدادات خدمة المخزون (المتطلب الثاني) ======
-      INVENTORY_GRPC_URL: "inventory-service:9090"
-      INVENTORY_GRPC_DEADLINE_MS: "3000"
-      # ====== المتطلب الثالث: الأداء والتخزين المؤقت ======
-      # كل تحسين له مفتاح true/false حتى نقيس قبل/بعد (غيّر شيئاً واحداً في كل مرة)
-      INVENTORY_BATCH_STOCKS: ${INVENTORY_BATCH_STOCKS:-true}
-      CACHE_ENABLED: ${CACHE_ENABLED:-true}
-      READ_REPLICA_ENABLED: ${READ_REPLICA_ENABLED:-true}
-      ETAG_ENABLED: ${ETAG_ENABLED:-true}
-      REDIS_URL: "redis://redis:6379"
-      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
-      READ_YOUR_WRITES_WINDOW_MS: ${READ_YOUR_WRITES_WINDOW_MS:-5000}
-      PRODUCTS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=products&connection_limit=5"
-      ORDERS_READ_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@read-replica:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
-      # ====== المتطلب الرابع: المعالجة غير المتزامنة ======
-      RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672"
-      RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
-      # Soketi: من داخل Docker نصل إليه باسم الحاوية (soketi)، أما المتصفح فيصل إليه عبر localhost:6001
-      PUSHER_APP_ID: ${PUSHER_APP_ID:-app-id}
-      PUSHER_APP_KEY: ${PUSHER_APP_KEY:-app-key}
-      PUSHER_APP_SECRET: ${PUSHER_APP_SECRET:-app-secret}
-      SOKETI_HOST: soketi
-      SOKETI_PORT: "6001"
-    ports:
-      - "${PORT:-3000}:${PORT:-3000}"
-    volumes:
-      - uploads:/app/uploads
+      <<: *backend-env
+      INSTANCE_ID: migrate
+      RUN_MIGRATIONS: "true"
+      RUN_SEED: "${RUN_SEED:-true}"
+      MIGRATE_ONLY: "true"
     depends_on:
-      db:
-        condition: service_healthy
-      inventory-service:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      read-replica:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      soketi:
-        condition: service_started
+      db: { condition: service_healthy }
+      inventory-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      read-replica: { condition: service_healthy }
 
+  backend-1:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      INSTANCE_ID: backend-1
+      RUN_MIGRATIONS: "false"
+      RUN_SEED: "false"
+  backend-2:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      INSTANCE_ID: backend-2
+      RUN_MIGRATIONS: "false"
+      RUN_SEED: "false"
+  backend-3:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      INSTANCE_ID: backend-3
+      RUN_MIGRATIONS: "false"
+      RUN_SEED: "false"
+
+  lb:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["${PORT:-3000}:80"]
+    volumes: ["./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on:
+      backend-1: { condition: service_healthy }
+      backend-2: { condition: service_healthy }
+      backend-3: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:${PORT:-3000}/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/api/v1/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 30
-      start_period: 60s
+      retries: 10
 
-  # ============================================================
-  #  المتطلب الرابع: الـ Worker (عملية مستقلة)
-  #  لإيقافه: docker compose stop worker   |   لتشغيله: docker compose start worker
-  # ============================================================
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    entrypoint: ["node", "/app/dist/worker.js"]
+  worker-1:
+    <<: *worker
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      ORDERS_DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}?schema=orders&connection_limit=5"
-      RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672"
-      RETRY_DELAYS_MS: ${RETRY_DELAYS_MS:-30000,90000}
-      MAIL_DRIVER: ${MAIL_DRIVER:-log}
-      MAIL_FORCE_FAIL: ${MAIL_FORCE_FAIL:-false}
-      MAIL_FROM: ${MAIL_FROM:-Souq Store <no-reply@localhost>}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_SECURE: ${SMTP_SECURE:-true}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
+      <<: *worker-env
+      INSTANCE_ID: worker-1
+  worker-2:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      INSTANCE_ID: worker-2
+  worker-3:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      INSTANCE_ID: worker-3
 
   perf-seed:
     build:

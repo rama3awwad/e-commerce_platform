@@ -20,6 +20,7 @@ import AdminProductsPage from "./pages/admin/AdminProductsPage";
 import AdminOrdersPage from "./pages/admin/AdminOrdersPage";
 import AdminCategoriesPage from "./pages/admin/AdminCategoriesPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import ScalabilityDashboardPage from "./pages/admin/ScalabilityDashboardPage";
 
 function App() {
   return (
@@ -120,6 +121,14 @@ function App() {
                 element={
                   <ProtectedRoute role="ADMIN">
                     <AdminAsyncMonitorPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/scalability"
+                element={
+                  <ProtectedRoute role="ADMIN">
+                    <ScalabilityDashboardPage />
                   </ProtectedRoute>
                 }
               />

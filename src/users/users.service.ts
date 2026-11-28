@@ -12,6 +12,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import * as bcrypt from 'bcryptjs';
+import { CacheService } from '../common/cache/cache.service';
+import { authUserCacheKey } from '../auth/strategies/jwt.strategy';
 
 @Injectable()
 export class UsersService {
@@ -21,6 +23,7 @@ export class UsersService {
     private readonly prisma: UsersPrismaService,
     private readonly orders: OrdersApi,
     private readonly notifications: NotificationsApi,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -173,6 +176,7 @@ export class UsersService {
       where: { id },
       data: updateUserDto,
     });
+    await this.cache.del(authUserCacheKey(id));
 
     this.logger.log(`User updated: ${id}`);
     return this.excludePassword(user);
@@ -197,6 +201,7 @@ export class UsersService {
     await this.prisma.user.delete({
       where: { id },
     });
+    await this.cache.del(authUserCacheKey(id));
     try { await this.notifications.deleteAllForUser(id); } catch (error) { this.logger.error(`Failed to delete notifications for user ${id}`, error instanceof Error ? error.stack : undefined); }
 
     this.logger.log(`User deleted: ${id}`);
@@ -207,24 +212,16 @@ export class UsersService {
    * Increment login attempts for account lockout
    */
   async incrementLoginAttempts(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!user) return;
-
-    const loginAttempts = user.loginAttempts + 1;
-    const lockUntil =
-      loginAttempts >= (parseInt(process.env.ACCOUNT_LOCKOUT_ATTEMPTS || '5', 10))
-        ? new Date(
-            Date.now() +
-              parseInt(process.env.ACCOUNT_LOCKOUT_DURATION_MINUTES || '15', 10) *
-                60 *
-                1000,
-          )
-        : null;
-
-    await this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
-      data: { loginAttempts, lockUntil },
+      data: { loginAttempts: { increment: 1 } },
+      select: { loginAttempts: true },
     });
+    if (updated.loginAttempts >= Number(process.env.ACCOUNT_LOCKOUT_ATTEMPTS || 5)) {
+      await this.prisma.user.update({ where: { id }, data: { lockUntil: new Date(Date.now() + Number(process.env.ACCOUNT_LOCKOUT_DURATION_MINUTES || 15) * 60 * 1000) } });
+    }
   }
 
   /**

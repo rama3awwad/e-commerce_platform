@@ -8,4 +8,5 @@ import { OrdersApi } from '../orders/api/orders.api';
 import { NotificationsApi } from '../notifications/api/notifications.api';
 import { HttpOrdersApi } from './clients/http-orders.api';
 import { HttpNotificationsApi } from './clients/http-notifications.api';
-@Module({imports:[InternalHttpModule],controllers:[UsersController,InternalUsersController],providers:[UsersService,UsersPrismaService,{provide:OrdersApi,useClass:HttpOrdersApi},{provide:NotificationsApi,useClass:HttpNotificationsApi}]}) export class UsersModule {}
+import { CacheModule } from '../common/cache/cache.module';
+@Module({imports:[CacheModule,InternalHttpModule],controllers:[UsersController,InternalUsersController],providers:[UsersService,UsersPrismaService,{provide:OrdersApi,useClass:HttpOrdersApi},{provide:NotificationsApi,useClass:HttpNotificationsApi}]}) export class UsersModule {}

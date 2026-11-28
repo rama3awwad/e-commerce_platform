@@ -22,14 +22,13 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
     this.running = true;
     let sent = 0;
     try {
-      const stale = await this.prisma.emailJob.findMany({
-        where: { status: 'QUEUED', publishedAt: null, createdAt: { lt: new Date(Date.now() - 30000) } },
-        orderBy: { createdAt: 'asc' }, take: 50,
-      });
-      for (const job of stale) {
-        try { await this.publisher.publishOrderCreated(job.payload as unknown as OrderCreatedEvent); sent++; }
-        catch (e) { this.logger.warn(`Relay publish failed for job ${job.id}: ${(e as Error).message}`); break; }
-      }
+      await this.prisma.$transaction(async (tx) => {
+        const stale = await tx.$queryRaw<{ id: string; payload: unknown }[]>`SELECT id, payload FROM email_jobs WHERE status = 'QUEUED' AND "publishedAt" IS NULL AND "createdAt" < ${new Date(Date.now() - 30000)} ORDER BY "createdAt" ASC LIMIT 50 FOR UPDATE SKIP LOCKED`;
+        for (const job of stale) {
+          try { await this.publisher.publishOrderCreated(job.payload as OrderCreatedEvent, tx); sent++; }
+          catch (e) { this.logger.warn(`Relay publish failed for job ${job.id}: ${(e as Error).message}`); break; }
+        }
+      }, { timeout: 30000, maxWait: 5000 });
       if (sent) this.logger.log(`Relayed ${sent} unpublished email job(s)`);
     } catch (e) { this.logger.error(`Outbox relay tick failed: ${(e as Error).message}`); }
     finally { this.running = false; }

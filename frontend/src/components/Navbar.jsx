@@ -64,6 +64,9 @@ function Navbar() {
                   <NavLink to="/admin/async-monitor" className={linkClass}>
                     مراقبة الإيميلات
                   </NavLink>
+                  <NavLink to="/admin/scalability" className={linkClass}>
+                    Scalability Lab
+                  </NavLink>
                   <NavLink to="/admin/categories" className={linkClass}>
                     الأقسام
                   </NavLink>
